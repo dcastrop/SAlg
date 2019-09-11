@@ -103,7 +103,7 @@ data Alg t where
   Lit  :: CVal t => t -> Alg t
   Prim :: String -> t -> Alg t
   BVar :: Integer -> Alg t
-  EVar :: Ident -> Alg t -- ^ Internal use only
+  CVal :: CExpr -> Alg t -- ^ Internal use only
 
   -- First order
   Ap   :: (CVal a, CVal b) => a :-> b -> Alg a -> Alg b
@@ -142,9 +142,9 @@ ordAlg _ _ (Prim _ _) = GT
 ordAlg _ (BVar x) (BVar y) = compare x y
 ordAlg _ (BVar _) _ = LT
 ordAlg _ _ (BVar _) = GT
-ordAlg _ (EVar x) (EVar y) = compare x y
-ordAlg _ (EVar _) _ = LT
-ordAlg _ _ (EVar _) = GT
+ordAlg _ (CVal _) (CVal _) = error "Panic! Cannot compare C Expressions"
+ordAlg _ (CVal _) _ = LT
+ordAlg _ _ (CVal _) = GT
 ordAlg l (Ap f x) (Ap g y) =
   case ordFun l f g of
     EQ -> ordAlg l x y
@@ -218,7 +218,6 @@ eqAlg _ (Lit (x :: a)) (Lit (y :: b)) =
     Nothing -> False
 eqAlg _ (Prim f _) (Prim g _) = f == g
 eqAlg _ (BVar x) (BVar y) = x == y
-eqAlg _ (EVar x) (EVar y) = x == y
 eqAlg l (Ap (Fun f) x) (Ap (Fun g) y) = eqAlg l f g && eqAlg l x y
 eqAlg l (Abs f) (Abs g) = eqAlg (l+1) (f $ BVar l) (g $ BVar l)
 eqAlg l (Fst x) (Fst y) = eqAlg l x y
@@ -242,7 +241,7 @@ printAlg :: Integer -> Alg t -> String
 printAlg _ (Lit x) = show x
 printAlg _ (Prim s _) = s
 printAlg _ (BVar i) = "?" ++ show i
-printAlg _ (EVar i) = show i
+printAlg _ (CVal i) = show i
 printAlg l (Ap (Fun f) x) = printAlg l f ++ "(" ++ printAlg l x ++ ")"
 printAlg l (Abs f) = "(fun->" ++ printAlg (l+1) (f (BVar l)) ++ ")"
 printAlg l (Fst x) = "fst (" ++ printAlg l x ++")"
@@ -267,9 +266,6 @@ printAlg l (Fix f) = "fix ?" ++ show l ++
                      "{" ++ printFun (f (Fun $ BVar l)) ++ "}"
   where
     printFun (Fun ff) = printAlg (1+l) ff
-
-fix :: (CVal a, CVal b) => (a :-> b -> Alg a -> Alg b) -> a :-> b
-fix f = Fun $ Fix (\g -> Fun (Abs (f g)))
 
 fun :: (CVal a, CVal b) => (Alg a -> Alg b) -> a :-> b
 fun f = Fun $ Abs f
@@ -302,9 +298,6 @@ tinl v _ = Inl v
 tinr :: (CVal a, CVal b) => t a -> Alg  b -> Alg (Either a b)
 tinr _ v = Inr v
 
-cnst :: (CVal b, CVal a) => Alg a -> b :-> a
-cnst a = Fun $ Abs $ \_ -> a
-
 --eqInt :: Alg Int -> Int :-> Bool
 --eqInt i = Fun $ Ap (Fun $ Prim "eqInt" (==)) i
 
@@ -326,12 +319,15 @@ encAlg (Abs _) = "fun"
 encAlg (Fst _) = "proj_1"
 encAlg (Snd _) = "proj_2"
 encAlg (BVar _) = "var"
-encAlg (EVar _) = "evar"
+encAlg (CVal _) = "evar"
 encAlg (Lit _) = ""
 encAlg (Case _ f g) = "case_" ++ encName f ++ "_" ++ encName g
 encAlg (Proj _ _) = ""
 encAlg Bot = "error"
 encAlg (Fix f) = "fix_" ++ encName (f (Fun $ BVar 0))
+
+cnst :: (CVal a, CVal b) => Alg b -> a :-> b
+cnst e = Fun $ Abs $ \_ -> e
 
 instance CCat (:->) where
   id = Fun $ Abs (\v -> v)
@@ -358,6 +354,9 @@ instance CArrVec Int (:->) where
   proj = Fun $ Abs $ \v -> Proj (afst v) (asnd v)
   vec f = Fun $ Abs (\v -> Vec (fun $ \x -> ap f (apair x (asnd v))) (afst v))
 
+instance CArrFix (:->) where
+  fix f = Fun $ Fix f
+
 class CVar v where
   var :: v a
 instance CVar Alg where
@@ -373,69 +372,81 @@ cret :: CExpr -> CExpr -> [CBlockItem]
 cret rv e = [CBlockStmt $ cExpr $ CAssign CAssignOp rv e undefNode]
 
 compileAlg :: CVal a => Alg a -> CExpr -> CGen [CBlockItem]
+compileAlg e rv
+  | getTy e == ECUnit = pure $ cret rv $ cVar cUnit
 compileAlg (Lit l) rv = cret rv <$> cVal l
 compileAlg (Prim v _) rv = pure $ cret rv $ cVar $ internalIdent v
 compileAlg (BVar _) _ = error "Panic! Cannot find open term!"
-compileAlg (EVar v) rv = pure $ cret rv $ cVar v
+compileAlg (CVal v) rv = pure $ cret rv v
 compileAlg (Ap f x) rv = do
-  v <- freshVar
-  dv <- v <:: x
-  cx <- compileAlg x $ cVar v -- XXX: Fix strict semantics!!!!!
+  (v, dv) <- declVar x
+  cx <- compileAlg x v -- XXX: Fix strict semantics!!!!!
   cf <- compileFun (unFun f) v rv
   pure $ dv ++ cx ++ cf
 compileAlg (Abs _) _ = error "Panic! A function cannot be a CVal!"
 compileAlg (Fst e) rv = do
-  v <- freshVar
-  dv <- v <:: e
-  cs <- compileAlg e $ cVar v
-  pure $ dv ++ cs ++ cret rv (cMember (cVar v) fstFld)
+  (v, dv) <- declVar e
+  cs <- compileAlg e v
+  pure $ dv ++ cs ++ cret rv (cMember v fstFld)
 compileAlg (Snd e) rv = do
-  v <- freshVar
-  dv <- v <:: e
-  cs <- compileAlg e $ cVar v
-  pure $ dv ++ cs ++ cret rv (cMember (cVar v) sndFld)
+  (v, dv) <- declVar e
+  cs <- compileAlg e v
+  pure $ dv ++ cs ++ cret rv (cMember v sndFld)
 compileAlg (Pair e1 e2) rv = do
   cs1 <- compileAlg e1 $ cMember rv fstFld
   cs2 <- compileAlg e2 $ cMember rv sndFld
   pure $ cs1 ++ cs2
+compileAlg (Inl e1) rv
+  | getTy e1 == ECUnit =
+    pure [CBlockStmt $ cExpr $ CAssign CAssignOp rv (cVar cTagl) undefNode]
 compileAlg (Inl e1) rv = do
   let c1 = CBlockStmt $ cExpr $ tL
   cs1 <- compileAlg e1 $ cMember (cMember rv valFld) inlFld
   pure $ c1 : cs1
   where
     tL = CAssign CAssignOp (cMember rv tagFld) (cVar cTagl) undefNode
+compileAlg (Inr e1) rv
+  | getTy e1 == ECUnit =
+    pure [CBlockStmt $ cExpr $ CAssign CAssignOp rv (cVar cTagr) undefNode]
 compileAlg (Inr e1) rv = do
   let c1 = CBlockStmt $ cExpr $ tR
   cs1 <- compileAlg e1 $ cMember (cMember rv valFld) inrFld
   pure $ c1 : cs1
   where
     tR = CAssign CAssignOp (cMember rv tagFld) (cVar cTagr) undefNode
+compileAlg (Case e l r) rv
+  | getTy e == ECEither ECUnit ECUnit = do
+  (v, dv) <- declVar e
+  s1 <- compileAlg e v
+  sl <- compileFun (unFun l) (cVar cUnit) rv
+  sr <- compileFun (unFun r) (cVar cUnit) rv
+  pure $ dv ++ s1 ++ [cs v sl sr]
+  where
+    cs v sl sr = CBlockStmt $ cCase v sl sr
 compileAlg (Case e l r) rv = do
-  v <- freshVar
-  dv <- v <:: e
-  vl <- freshVar
-  dvl <- vl <:: domTy l
-  vr <- freshVar
-  dvr <- vr <:: domTy r
-  s1 <- compileAlg e $ cVar v
+  (v, dv) <- declVar e
+  s1 <- compileAlg e v
+
+  (vl, dvl) <- declVar $ domTy l
   sl <- compileFun (unFun l) vl rv
+
+  (vr, dvr) <- declVar $ domTy r
   sr <- compileFun (unFun r) vr rv
+
   pure $ dv ++ dvl ++ dvr ++ s1 ++ [cs v vl sl vr sr]
   where
-    cs v vl sl vr sr = CBlockStmt $ cCase (cMember (cVar v) tagFld) cL cR
+    cs v vl sl vr sr = CBlockStmt $ cCase (cMember v tagFld) cL cR
       where
         cL = CBlockStmt (cExpr $ cAssign vl untagL) : sl
         cR = CBlockStmt (cExpr $ cAssign vr untagR) : sr
-        untagL = cMember (cMember (cVar v) valFld) inlFld
-        untagR = cMember (cMember (cVar v) valFld) inrFld
+        untagL = cMember (cMember v valFld) inlFld
+        untagR = cMember (cMember v valFld) inrFld
+
 compileAlg Vec{} _ = error "FIXME: vectors not yet supported"
 compileAlg VLit{} _ = error "FIXME: vectors not yet supported"
 compileAlg Proj{} _ = error "FIXME: vectors not yet supported"
 compileAlg Bot{} _ = pure errorAndExit
 compileAlg Fix{} _ = error "Panic! A recursive function cannot be a CVal!"
-
-
-
 
 domTy :: (CVal a, CVal b) => a :-> b -> CTy a
 domTy _ = getCTy
@@ -445,16 +456,16 @@ codTy _ = getCTy
 
 compileFun :: (CVal a, CVal b)
            => Alg (a -> b)
-           -> Ident
+           -> CExpr
            -> CExpr
            -> CGen [CBlockItem]
-compileFun (Abs f) x y = compileAlg (f $ EVar x) y
+compileFun (Abs f) x y = compileAlg (f $ CVal x) y
 compileFun (Prim f _) x y = pure $ cret y fx
   where
-    fx = CCall (cVar $ internalIdent f) [cVar x] undefNode
+    fx = CCall (cVar $ internalIdent f) [x] undefNode
 compileFun (Lit _) _  _ = error "Panic! A literal is not of the form a -> b"
 compileFun (BVar _) _  _ = error "Panic! Open term"
-compileFun (EVar v) x  y = pure $ cret y $ CCall (cVar v) [cVar x] undefNode -- Shouldn't happen
+compileFun (CVal v) x  y = pure $ cret y $ CCall v [x] undefNode -- Shouldn't happen
 compileFun Ap{} _ _ = error "Panic! Impossible case: arbitrary arity functions not yet supported"
 compileFun Fst{} _ _ = error "Panic! Cannot store a function in a tuple"
 compileFun Snd{} _ _ = error "Panic! Cannot store a function in a tuple"
@@ -470,23 +481,60 @@ compileFun (Fix f) x y = do -- FIXME: avoid generating multiple functions if the
   xty <- cTySpec xcty
   yty <- cTySpec ycty
   drv <- rv <:: ycty
-  fb <- compileFun (unFun $ f (Fun $ EVar fn)) arg $ cVar rv
-  newFun (fn, yty) (arg, xty)
+  fb <- compileFun (unFun $ f (Fun $ CVal $ cVar fn)) (cVar arg) $ cVar rv
+  newFun (fn, yty) [(arg, xty)]
     (drv ++ fb ++ [CBlockStmt $ CReturn (Just (cVar rv)) undefNode])
-  pure $ cret y $ CCall (cVar fn) [cVar x] undefNode
+  pure $ cret y $ CCall (cVar fn) [x] undefNode
 
 declareFun :: (CVal a, CVal b) => String -> a :-> b -> CGen ()
-declareFun (internalIdent -> fn) f = whenM (not <$> isDeclared fn) $ do
+declareFun fm f@(Fun (Prim fn _))
+  | fm == fn = whenM (not <$> isDeclared ifn) $ do
+      arg <- freshVar
+      rv <- freshVar
+      let ycty = codTy f
+          xcty = domTy f
+      xty <- cTySpec xcty
+      yty <- cTySpec ycty
+      drv <- rv <:: ycty
+      addComment ifn "Stub: implement"
+      newFun (ifn, yty) [(arg, xty)]
+        (drv ++
+         [ CBlockStmt $ CExpr (Just $ CCall (cVar $ internalIdent "printf")
+                              [ CConst $ CStrConst errMsg undefNode
+                              ] undefNode) undefNode
+         , CBlockStmt $ CExpr (Just $ CCall (cVar $ internalIdent "exit")
+                              [ CConst $ CIntConst (cInteger $ -1) undefNode
+                              ] undefNode) undefNode
+         , CBlockStmt $ CReturn (Just $ cVar rv) undefNode
+         ])
+  where
+    errMsg = cString $ fm ++ ": Stub, implement me\n"
+    ifn = internalIdent fn
+declareFun (internalIdent -> fn) (Fun (Fix f)) = whenM (not <$> isDeclared fn) $ do
   arg <- freshVar
   rv <- freshVar
-  let ycty = codTy f
-      xcty = domTy f
+  let ycty = codTy (f $ Fun Bot)
+      xcty = domTy (f $ Fun Bot)
   xty <- cTySpec xcty
   yty <- cTySpec ycty
   drv <- rv <:: ycty
-  fb <- compileFun (unFun f) arg $ cVar rv
-  newFun (fn, yty) (arg, xty)
+  fb <- compileFun (unFun $ f (Fun $ CVal $ cVar fn)) (cVar arg) $ cVar rv
+  newFun (fn, yty) [(arg, xty)]
     (drv ++ fb ++ [CBlockStmt $ CReturn (Just (cVar rv)) undefNode])
+declareFun (internalIdent -> fn) f = whenM (not <$> isDeclared fn) $ do
+  arg <- freshVar
+  xty <- cTySpec xcty
+
+  rv <- freshVar
+  drv <- rv <:: ycty
+  yty <- cTySpec ycty
+
+  fb <- compileFun (unFun f) (cVar arg) $ cVar rv
+  newFun (fn, yty) [(arg, xty)]
+    (drv ++ fb ++ [CBlockStmt $ CReturn (Just (cVar rv)) undefNode])
+  where
+    ycty = codTy f
+    xcty = domTy f
 
 
 

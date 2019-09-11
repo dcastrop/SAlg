@@ -16,7 +16,7 @@ ms :: CArrChoice t => t [Int] [Int] -> t [Int] [Int]
 ms msr = spl >>> (id +++ msr *** msr) >>> mrg
 
 msort :: [Int] :-> [Int]
-msort = Fun $ Fix ms
+msort = fix ms
 
 pms :: [Int] :=> [Int]
 pms = annotate annot $ kfix 1 ms
