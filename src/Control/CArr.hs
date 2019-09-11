@@ -3,6 +3,7 @@ module Control.CArr
   ( CArr (..)
   , CArrChoice (..)
   , CArrVec (..)
+  , CArrFix (..)
   ) where
 
 import qualified Prelude
@@ -75,3 +76,7 @@ class CArr a => CArrChoice a where
 class (Num i, CArr t) => CArrVec i t where
   proj :: CVal a => t (i, [a]) a
   vec :: (CVal a, CVal b) => t (i, a) b -> t (i, a) [b]
+
+
+class CArr t => CArrFix t where
+  fix :: (CVal a, CVal b) => (t a b -> t a b) -> t a b
