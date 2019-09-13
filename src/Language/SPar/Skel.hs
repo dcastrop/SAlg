@@ -93,14 +93,63 @@ type CProc a = SProc Alg (:->) a
 --  pn <- getProgName
 --  generateFile (pn ++ ".c") $ genLib f
 
+domTy :: CVal a => a :=> b -> CTy a
+domTy _ = getCTy
+
+codTy :: CVal b => a :=> b -> CTy b
+codTy _ = getCTy
+
 compileAsLib :: (CVal a, CVal b) => String -> AnnStrat -> a :=> b -> CGen ()
 compileAsLib fpn st f = do
   mapM_ (uncurry declF) df
   declareEnv fpn p
+  fns <- mapM (wrapParts fpn) [1..pids - 1]
+  av <- freshVar
+  aty <- cTySpec $ domTy f
+  bty <- cTySpec $ codTy f
+  newFun (internalIdent fpn, bty) [(av, aty)]
+    $ body fpn av 0 $ zip [1..pids-1] fns
+  newHeaderFun (internalIdent fpn) bty [aty]
   where
     declF fn (AAlg af) = declareFun fn af
-    (SProc p _, St _ (Defs (Map.toList -> df) _), ()) =
+    (SProc p _, St pids (Defs (Map.toList -> df) _), ()) =
       runRWS (unSkel (f >>> gather 0) $ DVal 0 getCTy) st emptySt
+
+wrapParts :: String -> PID -> CGen Ident
+wrapParts fpn p = do
+  fn <- freshN $ "fun_thread_" ++ show p
+  vn <- freshN "arg"
+  newFun (fn, ([CTypeSpec $ CVoidType undefNode], [CPtrDeclr [] undefNode]))
+    [(vn, ([CTypeSpec $ CVoidType undefNode], [CPtrDeclr [] undefNode]))]
+    [ CBlockStmt $ cExpr $
+      CCall (cVar $ internalIdent $ fpn ++ "_part_" ++ show p) [] undefNode
+    , CBlockStmt $ CReturn (Just $ cVar $ internalIdent "NULL") undefNode
+    ]
+  pure fn
+
+
+body :: String -> Ident -> PID -> [(PID, Ident)] -> [CBlockItem]
+body fpn av p0 ps = map declThread ps ++ map createThread ps ++ retn
+  where
+    retn = [ CBlockStmt $ (`CReturn` undefNode) $ Just $
+             CCall (cVar $ internalIdent $ fpn ++ "_part_" ++ show p0)
+             [cVar av] undefNode
+           ]
+    createThread (p, fn) = CBlockStmt $ cExpr $
+      CCall pthreadCreate
+      [ cAddr $ cVar $ threadName p
+      , cVar $ internalIdent "NULL"
+      , cVar fn
+      , cVar $ internalIdent "NULL"
+      ] undefNode
+    declThread (p, _) = CBlockDecl $ CDecl
+      [CTypeSpec $ CTypeDef (internalIdent "pthread_t") undefNode]
+      [mkThreadDeclr p] undefNode
+    mkThreadDeclr p =
+      ( Just $ CDeclr (Just $ threadName p) [] Nothing [] undefNode
+      , Nothing, Nothing)
+    threadName p = internalIdent $ "thread" ++ show p
+    pthreadCreate = cVar $ internalIdent "pthread_create"
 
 printSProc :: CProc a -> String
 printSProc p = printEnv $ unProc p

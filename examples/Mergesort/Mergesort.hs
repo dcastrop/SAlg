@@ -19,6 +19,6 @@ msort :: [Int] :-> [Int]
 msort = fix ms
 
 pms :: [Int] :=> [Int]
-pms = annotate annot $ kfix 1 ms
+pms = annotate annot $ kfix 0 ms
   where
     annot = ann spl <> ann msort

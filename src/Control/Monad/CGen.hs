@@ -42,11 +42,14 @@ module Control.Monad.CGen
   , isDeclared
   , addComment
   , typeSpec
+  , newHeaderFun
   , module X
   ) where
 
 import Control.Monad.RWS
 import Control.Monad.Except
+import Control.Monad.Extra ( whenM )
+import Data.Char
 import Data.Map.Strict ( Map )
 import Data.List ( intersperse )
 import qualified Data.Map.Strict as Map
@@ -238,10 +241,14 @@ data Chan = Chan { chname :: Ident
 
 data CGSt =
   CGSt { varGen :: [String] -- ^ Free variable generator
+
        , decls :: Map Ident CExtDecl -- ^ Mapping from identifier to declaration
        , comm :: Map Ident String -- ^ Comments to be added to final file
        , declOrder :: [Ident]
-       , channels :: Map (PID, PID, ECTy) Chan
+       , channel :: Map (PID, PID, ECTy) Chan
+
+       , headerDecls :: Map Ident CExtDecl
+       , hdeclOrder :: [Ident]
        }
 
 lookComm :: Ident -> CGSt -> String
@@ -257,15 +264,25 @@ generateFile :: FilePath -> CGen () -> IO ()
 generateFile fp m =
   case runRWS (runExceptT $ unCGen m) () initCGSt of
     (Left err, _, clog) -> do
-      putStrLn $ show clog
+      hPutStrLn stderr $ show clog
       putStrLn $ "\n"
-      putStrLn $ show err
+      hPutStrLn stderr $ show err
     (_, st, clog) -> do
       hPutStrLn stderr $ show clog
-      writeFile fp $ serialise st ++ "\n"
+      writeFile (fp ++ ".c") $ serialise st ++ "\n"
+      writeFile (fp ++ ".h") $ serialiseH st ++ "\n"
   where
+    defined = "__" ++ map toUpper fp ++ "__"
+    serialiseH st =
+      "#ifndef " ++ defined ++ "\n" ++
+      "#define " ++ defined ++ "\n\n" ++
+      "#include<stdio.h>\n#include<stdlib.h>\n#include<pthread.h>\n\n" ++
+      concat (intersperse "\n\n" $ map lookHdef $ reverse $ hdeclOrder st) ++
+      "\n\n#endif\n"
+      where
+        lookHdef d = render (pretty $ headerDecls st Map.! d)
     serialise st
-      = "#include<stdio.h>\n#include<stdlib.h>\n#include<pthread.h>\n\n" ++
+      = "#include \"" ++ fp ++ ".h\"\n\n" ++
         concat (intersperse "\n\n" $ map lookDef $ reverse $ declOrder st)
       where
         lookDef d = printComm (lookComm d st)  ++
@@ -286,12 +303,30 @@ initCGSt = CGSt { varGen = vgen
                 , decls = Map.empty
                 , comm = Map.empty
                 , declOrder = []
-                , channels = Map.empty
+                , channel = Map.empty
+                , headerDecls = Map.empty
+                , hdeclOrder = []
                 }
   where
     vgen = map ("v_"++) gen
     gen = [[c] | c <- ['a'..'z']]
-          ++ [ c ++ show i | i <- [1 :: Integer ..], c <- gen ]
+          ++ [ i : c | c <- gen, i <- ['a' .. 'z'] ]
+
+newHeaderFun :: Ident
+             -> ([CDeclSpec], [CDerivedDeclr])
+             -> [([CDeclSpec], [CDerivedDeclr])]
+             -> CGen ()
+newHeaderFun fn (dty, dq) args = modify $ \s ->
+  s { headerDecls = Map.insert fn decl $ headerDecls s
+    , hdeclOrder = fn : hdeclOrder s}
+  where
+    decl = CDeclExt $ CDecl dty [(Just fdeclr, Nothing, Nothing)] undefNode
+    fdeclr = CDeclr (Just fn) (fndeclr : dq) Nothing [] undefNode
+    fndeclr = CFunDeclr (Right (fnargs, False)) [] undefNode
+    fnargs = map mkFnArg args
+    mkFnArg (at, aq) = CDecl at [(Just $ mkArgD aq, Nothing, Nothing)] undefNode
+    mkArgD aq = CDeclr Nothing aq Nothing [] undefNode
+
 
 freshVar :: CGen Ident
 freshVar = gets varGen >>= \(h:t) -> do
@@ -327,13 +362,14 @@ cDbl i = CConst $ CFloatConst (cFloat $ realToFrac i) undefNode
 cStr :: String -> CExpr
 cStr s = CConst $ CStrConst (cString s) undefNode
 
+
 declare :: Ident -> [CDeclSpec] -> CGen [CDeclSpec]
 declare nm cd = do
   s <- get
-  if Map.member nm $ decls s
+  if Map.member nm $ headerDecls s
     then pure $ [CTypeSpec $ CTypeDef nm undefNode]
-    else do put s { decls = Map.insert nm (CDeclExt dd) $ decls s
-                  , declOrder = nm : declOrder s
+    else do put s { headerDecls = Map.insert nm (CDeclExt dd) $ headerDecls s
+                  , hdeclOrder = nm : hdeclOrder s
                   }
             pure $ [CTypeSpec $ CTypeDef nm undefNode]
   where
@@ -399,18 +435,19 @@ chanTySpec nm (tl, ql) =
     CSUType (CStruct CStructTag (Just nm) (Just qFields) [] undefNode) undefNode
   ]
   where
-    qFields = [ fld qsizeFld [ CTypeSpec $ CUnsigType undefNode
-                             , CTypeSpec $ CIntType undefNode] []
-              , fld qheadFld [ CTypeSpec $ CUnsigType undefNode
-                             , CTypeSpec $ CIntType undefNode] []
-              , fld qtailFld [ CTypeSpec $ CUnsigType undefNode
-                             , CTypeSpec $ CIntType undefNode] []
-              , fld qmutexFld [ CTypeSpec $
-                               CTypeDef (internalIdent "pthread_mutex_t")
-                               undefNode
-                             ] []
-              , fld qmemFld tl (CArrDeclr [] (CArrSize False (CConst $ CIntConst (cInteger 10) undefNode)) undefNode : ql)
-              ]
+    qFields =
+      [ fld qsizeFld [ CTypeSpec $ CUnsigType undefNode
+                     , CTypeSpec $ CIntType undefNode] []
+      , fld qheadFld [ CTypeSpec $ CIntType undefNode] []
+      , fld qtailFld [ CTypeSpec $ CIntType undefNode] []
+      , fld qmutexFld [ CTypeSpec $
+                        CTypeDef (internalIdent "pthread_mutex_t")
+                        undefNode
+                      ] []
+      , fld qmemFld tl (CArrDeclr [] (CArrSize False qSize) undefNode : ql)
+      ]
+
+
 
 qsizeFld :: Ident
 qsizeFld = internalIdent "q_size"
@@ -427,55 +464,191 @@ qmutexFld = internalIdent "q_mutex"
 qmemFld :: Ident
 qmemFld = internalIdent "q_mem"
 
+-- qfullFld :: Ident
+-- qfullFld = internalIdent "q_full"
+
+-- TODO: optimize channel type
 getChan :: PID -> PID -> ECTy -> CGen Chan
 getChan from to ty = do
   s <- get
-  case Map.lookup (from, to, ty) (channels s) of
+  case Map.lookup (from, to, ty) (channel s) of
     Just i -> pure i
     Nothing -> do
       cty <- typeSpec ty
       ctys <- declare qtname (chanTySpec qsname cty)
 
-      let sz = show $ Map.size (channels s)
+      let sz = show $ Map.size (channel s)
           chn = internalIdent $ "ch" ++ sz
-          sendc = internalIdent $ "send_ch" ++ sz
-          recvc = internalIdent $ "recv_ch" ++ sz
+          sendc = internalIdent $ identToString qsname ++ "_put"
+          recvc = internalIdent $ identToString qsname ++ "_get"
           ch = Chan { chname = chn, chsend = sendc, chrecv = recvc }
 
-      declVar chn ctys []
-        (Just $ CInitList [ ( []
-                            , CInitExpr (CConst $ CIntConst (cInteger 10) undefNode)
-                              undefNode
-                            )
-                          , ( []
-                            , CInitExpr (CConst $ CIntConst (cInteger 0) undefNode)
-                              undefNode
-                            )
-                          , ( []
-                            , CInitExpr (CConst $ CIntConst (cInteger 0) undefNode)
-                              undefNode
-                            )
-                          , ( []
-                            , CInitExpr (cVar $ internalIdent "PTHREAD_MUTEX_INITIALIZER")
-                              undefNode
-                            )
-                          , ( []
-                            , CInitList [] undefNode
-                            )
-                          ]
-          undefNode)
-      modify $ \st -> st { channels = Map.insert (from, to, ty) ch $ channels s }
+      declVar chn ctys [] (Just initChan)
+
+      whenM (not <$> isDeclared sendc) $ do
+        v <- freshVar
+        vch <- freshN "ch"
+        let sB = mkSendc (cVar vch) v
+        newFun (sendc, ([CTypeSpec $ CVoidType undefNode], []))
+          [ (vch, (ctys, []))
+          , (v, cty)
+          ] sB
+        newHeaderFun sendc ([CTypeSpec $ CVoidType undefNode], [])
+          [ (ctys, []) , cty]
+
+      whenM (not <$> isDeclared recvc) $ do
+        vr <- freshVar
+        vch <- freshN "ch"
+        newFun (recvc, cty) [(vch, (ctys, []))] $ mkRecvc (cVar vch) vr cty
+        newHeaderFun recvc cty [(ctys, [])]
+
+      modify $ \st -> st { channel = Map.insert (from, to, ty) ch $ channel s }
 
       pure ch
   where
     qsname = cTyName "q_" ty ""
     qtname = cTyName "q_" ty "_t"
 
+mkSendc :: CExpr -> Ident -> [CBlockItem]
+mkSendc ch v =
+  [ CBlockStmt $
+    CWhile (intConst 1) (CCompound [] body undefNode) False undefNode
+  ]
+  where
+    body = map CBlockStmt
+      [ CWhile isFull emptyStat False undefNode
+      , cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
+      , CIf notFull (CCompound [] addToQ undefNode) Nothing undefNode
+      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
+      ]
+    addToQ = map CBlockStmt
+      [ cExpr $ CAssign CAssignOp (cIdx qmem qhd) (cVar v) undefNode
+      , cExpr $ CAssign CAssignOp qhd incIdx undefNode
+      , cExpr $ CUnary CPostIncOp qsz undefNode
+      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
+      , CReturn Nothing undefNode
+      ]
+    incIdx = (qhd `cPlus` intConst 1) `cMod` qSize
+    qhd = cMember ch qheadFld
+    qsz = cMember ch qsizeFld
+    qmem = cMember ch qmemFld
+    isFull = cMember ch qsizeFld `cGeq` qSize
+    notFull = cMember ch qsizeFld `cLt` qSize
+    mutex = cMember ch qmutexFld
+
+cIdx :: CExpr -> CExpr -> CExpr
+cIdx e1 e2 = CIndex e1 e2 undefNode
+
+pthreadMutexLock :: CExpr
+pthreadMutexLock = cVar $ internalIdent "pthread_mutex_lock"
+
+pthreadMutexUnlock :: CExpr
+pthreadMutexUnlock = cVar $ internalIdent "pthread_mutex_unlock"
+
+emptyStat :: CStat
+emptyStat = CCompound [] [] undefNode
+
+cGeq :: CExpr -> CExpr -> CExpr
+cGeq e1 e2 = CBinary CGeqOp e1 e2 undefNode
+
+cLeq :: CExpr -> CExpr -> CExpr
+cLeq e1 e2 = CBinary CLeqOp e1 e2 undefNode
+
+cGt :: CExpr -> CExpr -> CExpr
+cGt e1 e2 = CBinary CGrOp e1 e2 undefNode
+
+cPlus :: CExpr -> CExpr -> CExpr
+cPlus e1 e2 = CBinary CAddOp e1 e2 undefNode
+
+cMod :: CExpr -> CExpr -> CExpr
+cMod e1 e2 = CBinary CRmdOp e1 e2 undefNode
+
+cLt :: CExpr -> CExpr -> CExpr
+cLt e1 e2 = CBinary CLeOp e1 e2 undefNode
+
+-- void send_ch0(tag_t v_c1)
+-- {
+--   while (1) {
+--     while (ch0.q_size >= 10);
+--     pthread_mutex_lock(&ch0.q_mutex);
+--     if (ch0.q_size < 10) {
+--       ch0.q_mem[ch0.q_head] = v_c1;
+--       ch0.q_head = (ch0.q_head + 1) % 10;
+--       ch0.q_size++
+--       pthread_mutex_unlock(&ch0.q_mutex);
+--       return;
+--     }
+--     pthread_mutex_unlock(&ch0.q_mutex);
+--   }
+-- }
+
+
+-- tag_t recv_ch0()
+-- {
+--   while (1) {
+--     while (ch0.q_size <= 0);
+--     pthread_mutex_lock(&ch0.q_mutex);
+--     if (ch0.q_size > 0) {
+--       tag_t res = ch0.q_mem[ch0.q_tail];
+--       ch0.q_tail = (ch0.q_tail + 1) % 10;
+--       ch0.q_size--;
+--       pthread_mutex_unlock(&ch0.q_mutex);
+--       return res;
+--     }
+--     pthread_mutex_unlock(&ch0.q_mutex);
+--   }
+-- }
+--
+
+mkRecvc :: CExpr -> Ident -> ([CDeclSpec], [CDerivedDeclr]) -> [CBlockItem]
+mkRecvc ch v (tyd, tyq) =
+  [ CBlockDecl $ CDecl tyd [(Just vdecl, Nothing, Nothing)] undefNode
+  , CBlockStmt $
+    CWhile (intConst 1) (CCompound [] body undefNode) False undefNode
+  ]
+  where
+    vdecl = CDeclr (Just v) tyq Nothing [] undefNode
+    body = map CBlockStmt
+      [ CWhile isEmpty emptyStat False undefNode
+      , cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
+      , CIf notEmpty (CCompound [] getFromQ undefNode) Nothing undefNode
+      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
+      ]
+    getFromQ = map CBlockStmt
+      [ cExpr $ CAssign CAssignOp (cVar v) (cIdx qmem qtl) undefNode
+      , cExpr $ CAssign CAssignOp qtl incIdx undefNode
+      , cExpr $ CUnary CPostDecOp qsz undefNode
+      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
+      , CReturn (Just $ cVar v) undefNode
+      ]
+    incIdx = (qtl `cPlus` intConst 1) `cMod` qSize
+    qtl = cMember ch qtailFld
+    qsz = cMember ch qsizeFld
+    qmem = cMember ch qmemFld
+    isEmpty = cMember ch qsizeFld `cLeq` intConst 0
+    notEmpty = cMember ch qsizeFld `cGt` intConst 0
+    mutex = cMember ch qmutexFld
+
+intConst :: Integer -> CExpr
+intConst i = CConst $ CIntConst (cInteger i) undefNode
+
+qSize :: CExpr
+qSize = CConst $ CIntConst (cInteger 16) undefNode
+
+initChan :: CInit
+initChan = CInitList
+  [ ([],CInitExpr (CConst $ CIntConst (cInteger 0) undefNode) undefNode)
+  , ([],CInitExpr (CConst $ CIntConst (cInteger 0) undefNode) undefNode)
+  , ([],CInitExpr (CConst $ CIntConst (cInteger 0) undefNode) undefNode)
+  , ([],CInitExpr (cVar $ internalIdent "PTHREAD_MUTEX_INITIALIZER") undefNode)
+  , ([],CInitList [] undefNode)
+  ] undefNode
+
 csend :: PID -> PID -> ECTy -> CExpr -> CGen [CBlockItem]
 csend from to ty v = do
   c <- getChan from to ty
   pure $ [CBlockStmt $ cExpr $
-    CCall (cVar $ chsend c) [v] undefNode]
+    CCall (cVar $ chsend c) [cVar $ chname c, v] undefNode]
 
 cAddr :: CExpr -> CExpr
 cAddr e = CUnary CAdrOp e undefNode
@@ -484,7 +657,7 @@ crecv :: PID -> PID -> ECTy -> CExpr -> CGen [CBlockItem]
 crecv from to ty v = do
   c <- getChan to from ty
   pure $ [ CBlockStmt $ cExpr $
-           cAssign v $ CCall (cVar $ chrecv c) [] undefNode ]
+           cAssign v $ CCall (cVar $ chrecv c) [cVar $ chname c] undefNode ]
 
 cExpr :: CExpr -> CStat
 cExpr e = CExpr (Just e) undefNode
