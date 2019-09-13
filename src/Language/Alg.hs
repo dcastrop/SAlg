@@ -489,26 +489,12 @@ compileFun (Fix f) x y = do -- FIXME: avoid generating multiple functions if the
 declareFun :: (CVal a, CVal b) => String -> a :-> b -> CGen ()
 declareFun fm f@(Fun (Prim fn _))
   | fm == fn = whenM (not <$> isDeclared ifn) $ do
-      arg <- freshVar
-      rv <- freshVar
       let ycty = codTy f
           xcty = domTy f
       xty <- cTySpec xcty
       yty <- cTySpec ycty
-      drv <- rv <:: ycty
-      addComment ifn "Stub: implement"
-      newFun (ifn, yty) [(arg, xty)]
-        (drv ++
-         [ CBlockStmt $ CExpr (Just $ CCall (cVar $ internalIdent "printf")
-                              [ CConst $ CStrConst errMsg undefNode
-                              ] undefNode) undefNode
-         , CBlockStmt $ CExpr (Just $ CCall (cVar $ internalIdent "exit")
-                              [ CConst $ CIntConst (cInteger $ -1) undefNode
-                              ] undefNode) undefNode
-         , CBlockStmt $ CReturn (Just $ cVar rv) undefNode
-         ])
+      newHeaderFun ifn yty [xty]
   where
-    errMsg = cString $ fm ++ ": Stub, implement me\n"
     ifn = internalIdent fn
 declareFun (internalIdent -> fn) (Fun (Fix f)) = whenM (not <$> isDeclared fn) $ do
   arg <- freshVar
