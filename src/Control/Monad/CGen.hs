@@ -490,17 +490,17 @@ getChan from to ty = do
         vch <- freshN "ch"
         let sB = mkSendc (cVar vch) v
         newFun (sendc, ([CTypeSpec $ CVoidType undefNode], []))
-          [ (vch, (ctys, []))
+          [ (vch, (ctys, [CPtrDeclr [] undefNode]))
           , (v, cty)
           ] sB
         newHeaderFun sendc ([CTypeSpec $ CVoidType undefNode], [])
-          [ (ctys, []) , cty]
+          [ (ctys, [CPtrDeclr [] undefNode]) , cty]
 
       whenM (not <$> isDeclared recvc) $ do
         vr <- freshVar
         vch <- freshN "ch"
-        newFun (recvc, cty) [(vch, (ctys, []))] $ mkRecvc (cVar vch) vr cty
-        newHeaderFun recvc cty [(ctys, [])]
+        newFun (recvc, cty) [(vch, (ctys, [CPtrDeclr [] undefNode]))] $ mkRecvc (cVar vch) vr cty
+        newHeaderFun recvc cty [(ctys, [CPtrDeclr [] undefNode])]
 
       modify $ \st -> st { channel = Map.insert (from, to, ty) ch $ channel s }
 
@@ -529,12 +529,12 @@ mkSendc ch v =
       , CReturn Nothing undefNode
       ]
     incIdx = (qhd `cPlus` intConst 1) `cMod` qSize
-    qhd = cMember ch qheadFld
-    qsz = cMember ch qsizeFld
-    qmem = cMember ch qmemFld
-    isFull = cMember ch qsizeFld `cGeq` qSize
-    notFull = cMember ch qsizeFld `cLt` qSize
-    mutex = cMember ch qmutexFld
+    qhd = cMemberAddr ch qheadFld
+    qsz = cMemberAddr ch qsizeFld
+    qmem = cMemberAddr ch qmemFld
+    isFull = cMemberAddr ch qsizeFld `cGeq` qSize
+    notFull = cMemberAddr ch qsizeFld `cLt` qSize
+    mutex = cMemberAddr ch qmutexFld
 
 cIdx :: CExpr -> CExpr -> CExpr
 cIdx e1 e2 = CIndex e1 e2 undefNode
@@ -622,12 +622,12 @@ mkRecvc ch v (tyd, tyq) =
       , CReturn (Just $ cVar v) undefNode
       ]
     incIdx = (qtl `cPlus` intConst 1) `cMod` qSize
-    qtl = cMember ch qtailFld
-    qsz = cMember ch qsizeFld
-    qmem = cMember ch qmemFld
-    isEmpty = cMember ch qsizeFld `cLeq` intConst 0
-    notEmpty = cMember ch qsizeFld `cGt` intConst 0
-    mutex = cMember ch qmutexFld
+    qtl = cMemberAddr ch qtailFld
+    qsz = cMemberAddr ch qsizeFld
+    qmem = cMemberAddr ch qmemFld
+    isEmpty = cMemberAddr ch qsizeFld `cLeq` intConst 0
+    notEmpty = cMemberAddr ch qsizeFld `cGt` intConst 0
+    mutex = cMemberAddr ch qmutexFld
 
 intConst :: Integer -> CExpr
 intConst i = CConst $ CIntConst (cInteger i) undefNode
@@ -648,7 +648,7 @@ csend :: PID -> PID -> ECTy -> CExpr -> CGen [CBlockItem]
 csend from to ty v = do
   c <- getChan from to ty
   pure $ [CBlockStmt $ cExpr $
-    CCall (cVar $ chsend c) [cVar $ chname c, v] undefNode]
+    CCall (cVar $ chsend c) [cAddr $ cVar $ chname c, v] undefNode]
 
 cAddr :: CExpr -> CExpr
 cAddr e = CUnary CAdrOp e undefNode
@@ -657,7 +657,7 @@ crecv :: PID -> PID -> ECTy -> CExpr -> CGen [CBlockItem]
 crecv from to ty v = do
   c <- getChan to from ty
   pure $ [ CBlockStmt $ cExpr $
-           cAssign v $ CCall (cVar $ chrecv c) [cVar $ chname c] undefNode ]
+           cAssign v $ CCall (cVar $ chrecv c) [cAddr $ cVar $ chname c] undefNode ]
 
 cExpr :: CExpr -> CStat
 cExpr e = CExpr (Just e) undefNode
@@ -670,6 +670,9 @@ cCall fn e = CCall (cVar fn) e undefNode
 
 cMember :: CExpr -> Ident -> CExpr
 cMember e i = CMember e i False undefNode
+
+cMemberAddr :: CExpr -> Ident -> CExpr
+cMemberAddr e i = CMember e i True undefNode
 
 cComp :: [CBlockItem] -> CStat
 cComp e = CCompound [] e undefNode
