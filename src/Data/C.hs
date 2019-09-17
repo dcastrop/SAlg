@@ -1,12 +1,15 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE IncoherentInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Data.C
   ( CVal (..)
   , CTy(..)
+  , IsFun
   , eraseTy
   , getCTyR
   , getTy
@@ -74,7 +77,11 @@ pairTy _ _ = typeRep
 cTySpec :: forall a t. CVal a => t a -> CGen ([CDeclSpec], [CDerivedDeclr])
 cTySpec _ = typeSpec $ eraseTy $ (getCTy :: CTy a)
 
-class (Eq a, Ord a, Show a, Typeable a) => CVal a where
+type family IsFun f where
+  IsFun (a -> b) = 'True
+  IsFun a = 'False
+
+class (Eq a, Ord a, Show a, Typeable a, IsFun a ~ 'False) => CVal a where
   getCTy  :: CTy a
   cVal    :: a -> CGen CExpr
 

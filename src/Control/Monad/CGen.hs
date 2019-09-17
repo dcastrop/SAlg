@@ -26,6 +26,8 @@ module Control.Monad.CGen
   , valFld
   , fstFld
   , sndFld
+  , elemsFld
+  , sizeFld
   , declare
   , newFun
   , newVar

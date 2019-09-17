@@ -99,6 +99,7 @@ type CEnv = Env Alg (:->)
 declareEnv :: String -> CEnv -> CGen ()
 declareEnv fn = mapM_ compileRole . Map.toList . unEnv
   where
+    compileRole :: (PID, CAPar) -> CGen ()
     compileRole (r, APar c) = declareParFun fn r c
 
 

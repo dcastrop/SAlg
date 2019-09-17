@@ -111,6 +111,7 @@ compileAsLib fpn st f = do
     $ body fpn av 0 $ zip [1..pids-1] fns
   newHeaderFun (internalIdent fpn) bty [aty]
   where
+    declF :: String -> AAlg -> CGen ()
     declF fn (AAlg af) = declareFun fn af
     (SProc p _, St pids (Defs (Map.toList -> df) _), ()) =
       runRWS (unSkel (f >>> gather 0) $ DVal 0 getCTy) st emptySt
@@ -165,6 +166,8 @@ printASkel st (SSkel f) = do
   putStrLn $ printSProc pc
   where
     (pc, df, ()) = runRWS (f $ DVal 0 getCTy) st emptySt
+
+    printDefs :: [(String, AAlg)] -> String
     printDefs [] = ""
     printDefs ((d, AAlg e) : es) =
       d ++ " = " ++ printAlg 0 (unFun e) ++ "\n\n" ++ printDefs es

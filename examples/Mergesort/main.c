@@ -63,11 +63,11 @@ int main(void) {
   in.elems = (int *)inv;
   in.size = sizeof(inv) / sizeof(int);
 
-  vec_int_t sout = fix_fun(in);
-  for (int i = 0; i < sout.size; i++) {
-    printf("%d ", sout.elems[i]);
-  }
-  printf("\n");
+  // vec_int_t sout = fix_fun(in);
+  // for (int i = 0; i < sout.size; i++) {
+  //   printf("%d ", sout.elems[i]);
+  // }
+  // printf("\n");
 
   vec_int_t out = pms(in);
   for (int i = 0; i < out.size; i++) {
