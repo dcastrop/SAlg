@@ -3,3 +3,8 @@
 *.o
 .stack-work
 SAlg.cabal
+
+examples/Mergesort/*
+!examples/Mergesort/Mergesort.hs
+!examples/Mergesort/main.c
+!examples/Mergesort/Makefile

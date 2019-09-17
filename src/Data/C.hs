@@ -1,12 +1,16 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE IncoherentInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Data.C
   ( CVal (..)
   , CTy(..)
+  , IsFun
+  , eraseTy
   , getCTyR
   , getTy
   , eitherTy
@@ -22,9 +26,9 @@ module Data.C
   , cCase
   , cTagl
   , cTagr
+  , declVar
   ) where
 
-import Control.Monad ( join, void )
 import Control.Monad.CGen
 import Type.Reflection ( Typeable, TypeRep, typeRep )
 
@@ -70,122 +74,14 @@ eitherTy _ _ = typeRep
 pairTy :: (CVal a, CVal b) => t a -> t b -> TypeRep (a, b)
 pairTy _ _ = typeRep
 
-tUnit :: Ident
-tUnit = internalIdent "unit"
+cTySpec :: forall a t. CVal a => t a -> CGen ([CDeclSpec], [CDerivedDeclr])
+cTySpec _ = typeSpec $ eraseTy $ (getCTy :: CTy a)
 
-cUnit :: Ident
-cUnit = internalIdent "Unit"
+type family IsFun f where
+  IsFun (a -> b) = 'True
+  IsFun a = 'False
 
-tyUnit :: Ident
-tyUnit = internalIdent "unit_t"
-
-unitTySpec :: CTypeSpec
-unitTySpec = CEnumType (CEnum (Just tUnit) (Just [(cUnit, Nothing)])
-                         [] undefNode) undefNode
-
-cTyName :: String -> CTy a -> Ident
-cTyName suff = internalIdent . (++ suff) . tyNm
-  where
-    tyNm :: CTy a -> String
-    tyNm CUnit = "unit"
-    tyNm CInt = "int"
-    tyNm CBool = "int"
-    tyNm CFlt = "float"
-    tyNm CDbl = "double"
-    tyNm CStr = "string"
-    tyNm (CPair l r) = "pair_" ++ tyNm l ++ "_" ++ tyNm r
-    tyNm (CEither l r) = "either_" ++ tyNm l ++ "_" ++ tyNm r
-    tyNm (CVec a) = "vec_" ++ tyNm a
-
-pairTySpec :: Ident
-           -> (CTypeSpec, [CDerivedDeclr])
-           -> (CTypeSpec, [CDerivedDeclr])
-           -> CTypeSpec
-pairTySpec nm (tl, ql) (tr, qr) =
-  CSUType (CStruct CStructTag (Just nm) (Just [p1, p2]) [] undefNode) undefNode
-  where
-    p1 = fld fstFld tl ql
-    p2 = fld sndFld tr qr
-
-fld :: Ident -> CTypeSpec -> [CDerivedDeclr] -> CDecl
-fld s t q = CDecl [CTypeSpec t] [(fldD, Nothing, Nothing)] undefNode
-  where
-    fldD = Just $ CDeclr (Just s) q Nothing [] undefNode
-
-tagFld :: Ident
-tagFld = internalIdent "tag"
-
-valFld :: Ident
-valFld = internalIdent "val"
-
-inlFld :: Ident
-inlFld = internalIdent "inl"
-
-inrFld :: Ident
-inrFld = internalIdent "inr"
-
-fstFld :: Ident
-fstFld = internalIdent "fst"
-
-sndFld :: Ident
-sndFld = internalIdent "snd"
-
-tyTag :: Ident
-tyTag = internalIdent "tag_t"
-
-tTag :: Ident
-tTag = internalIdent "tag"
-
-cTagl :: Ident
-cTagl = internalIdent "Inl"
-
-cTagr :: Ident
-cTagr = internalIdent "Inr"
-
-tagTySpec :: CTypeSpec
-tagTySpec = CEnumType (CEnum (Just tTag) cs [] undefNode) undefNode
-  where
-    cs = Just [(cTagl, Nothing),(cTagr, Nothing)]
-
-eitherTySpec :: Ident
-             -> (CTypeSpec, [CDerivedDeclr])
-             -> (CTypeSpec, [CDerivedDeclr])
-             -> CTypeSpec
-eitherTySpec nm (tl, ql) (tr, qr) =
-  CSUType (CStruct CStructTag (Just nm) (Just [p1, p2]) [] undefNode) undefNode
-  where
-    p1 = fld tagFld (CTypeDef tyTag undefNode) []
-    p2 = fld valFld cunion []
-    cunion = CSUType csu undefNode
-    csu = CStruct CUnionTag Nothing (Just [inj1, inj2]) [] undefNode
-    inj1 = fld inlFld tl ql
-    inj2 = fld inrFld tr qr
-
-cTySpec :: CTy a -> CGen (CTypeSpec, [CDerivedDeclr])
-cTySpec CUnit = (,) <$> declare tyUnit unitTySpec <*> pure []
-cTySpec CInt = pure $ (CIntType undefNode, [])
-cTySpec CBool = pure $ (CIntType undefNode, [])
-cTySpec CFlt = pure $ (CFloatType undefNode, [])
-cTySpec CDbl = pure $ (CDoubleType undefNode, [])
-cTySpec CStr = pure $ (CCharType undefNode, [CPtrDeclr [] undefNode])
-cTySpec p@(CPair l r) = join $ doPair <$> cTySpec l <*> cTySpec r
-  where
-    doPair cl cr = (,) <$> declare nmt (pairTySpec nm cl cr) <*> pure []
-    nmt = cTyName "_t" p
-    nm = cTyName "" p
-cTySpec p@(CEither l r) = do
-  void $ declare tyTag tagTySpec
-  join $ doEither <$> cTySpec l <*> cTySpec r
-  where
-    doEither cl cr
-      = (,) <$> declare nmt (eitherTySpec nm cl cr) <*> pure []
-    nmt = cTyName "_t" p
-    nm = cTyName "" p
-cTySpec (CVec a) = addPtr <$> cTySpec a
-  where
-    addPtr (t, d) = (t, CPtrDeclr [] undefNode : d)
-
-class (Eq a, Ord a, Show a, Typeable a) => CVal a where
+class (Eq a, Ord a, Show a, Typeable a, IsFun a ~ 'False) => CVal a where
   getCTy  :: CTy a
   cVal    :: a -> CGen CExpr
 
@@ -228,14 +124,14 @@ instance (CVal a, CVal b) => CVal (Either a b) where
     cVar <$> newVar t q (Just $ ini [tagL, ([], ini [([mkInL], iniE vx)])])
       where
         tagL = ([], iniE $ cVar cTagl)
-        mkInL = CMemberDesig (internalIdent "inl") undefNode
+        mkInL = CMemberDesig inlFld undefNode
   cVal (Right x) = do
     vx <- cVal x
     (t, q) <- cTySpec $ getCTy @(Either a b)
     cVar <$> newVar t q (Just $ ini [tagR, ([], ini [([mkInR], iniE vx)])])
       where
         tagR = ([], iniE $ cVar cTagr)
-        mkInR = CMemberDesig (internalIdent "inr") undefNode
+        mkInR = CMemberDesig inrFld undefNode
 
 ini :: CInitializerList NodeInfo -> CInitializer NodeInfo
 ini = (`CInitList` undefNode)
@@ -258,6 +154,16 @@ v <:: _ = do
 cCase :: CExpr -> [CBlockItem] -> [CBlockItem] -> CStat
 cCase e l r = CSwitch e cases undefNode
   where
-    cases = CCompound [] (zipWith mkCase [l, r] [cTagl, cTagr]) undefNode
-    mkCase ss tag = CBlockStmt $ CCase (cVar tag) (caseCode ss) undefNode
-    caseCode ss = CCompound [] (ss ++ [CBlockStmt $ CBreak undefNode]) undefNode
+    cases = cComp $ zipWith3 mkCase [True, False] [l, r] [cTagl, cTagr]
+    mkCase bb ss tag = CBlockStmt $ CCase (cVar tag) (caseCode bb ss) undefNode
+    caseCode b ss = cComp $ ss ++ mbreak
+      where
+        mbreak = if b then [CBlockStmt $ CBreak undefNode] else []
+
+declVar :: forall a t. CVal a => t a -> CGen (CExpr, [CBlockItem])
+declVar e
+  | getTy e == ECUnit = pure (cVar cUnit, [])
+  | otherwise = do
+      v <- freshVar
+      dv <- v <:: e
+      pure (cVar v, dv)
