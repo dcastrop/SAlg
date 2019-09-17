@@ -76,6 +76,7 @@ class CArr a => CArrChoice a where
 class (Num i, CArr t) => CArrVec i t where
   proj :: CVal a => t (i, [a]) a
   vec :: (CVal a, CVal b) => t (i, a) b -> t (i, a) [b]
+  vsize :: CVal a => t [a] i
 
 
 class CArr t => CArrFix t where

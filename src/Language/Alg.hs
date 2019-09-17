@@ -21,19 +21,23 @@ module Language.Alg
   , (:->)(..)
   , Poly(..)
   , pmap
-  , PMap
+  , (.<)
+  , (.<=)
+  , (.>)
+  , (.>=)
   , encName
-  , cnst
-  , afst
-  , asnd
-  , apair
   , tinl
   , tinr
   , fun
   , fix
   , testB
+  , tif
+  , bif
   -- , eqInt
   , printAlg
+  , apair
+  , afst
+  , asnd
   , eqAlg
   , eqFun
   , ordAlg
@@ -99,11 +103,26 @@ pmap (PS l r) f =
     (lf, pl) = pmap l f
     (rf, pr) = pmap r f
 
+data UnOp = Neg
+  deriving (Eq, Ord)
+data BinOp = Plus | Minus | Mult | Div | Mod
+  deriving (Eq, Ord)
+data CmpOp = Le | Lt | Ge | Gt | Eq
+  deriving (Eq, Ord)
+
 data Alg t where
   Lit  :: CVal t => t -> Alg t
   Prim :: String -> t -> Alg t
   BVar :: Integer -> Alg t
   CVal :: CExpr -> Alg t -- ^ Internal use only
+
+  -- Bool funcs
+  BIf  :: CVal a => Alg Bool -> Alg a -> Alg a -> Alg a
+
+  -- Num functions
+  UnOp :: (Num a, CVal a) => UnOp -> Alg a -> Alg a
+  BinOp :: (Num a, CVal a) => BinOp -> Alg a -> Alg a -> Alg a
+  CmpOp :: (Num a, CVal a) => CmpOp -> Alg a -> Alg a -> Alg Bool
 
   -- First order
   Ap   :: (CVal a, CVal b) => a :-> b -> Alg a -> Alg b
@@ -115,16 +134,49 @@ data Alg t where
 
   Inl  :: (CVal a, CVal b) => Alg a -> Alg (Either a b)
   Inr  :: (CVal a, CVal b) => Alg b -> Alg (Either a b)
-  Case :: (CVal a, CVal b, CVal c) => Alg (Either a b) -> a :-> c -> b :-> c -> Alg c
+  Case :: (CVal a, CVal b, CVal c)
+       => Alg (Either a b) -> a :-> c -> b :-> c -> Alg c
 
   Vec  :: CVal a => Int :-> a -> Alg Int -> Alg [a]
   VLit :: CVal a => [Alg a] -> Alg [a] -- Static initialization
   Proj :: CVal a => Alg Int -> Alg [a] -> Alg a
-  Bot  :: Alg t
+  VLen :: CVal a => Alg [a] -> Alg Int
 
+  Bot  :: Alg t
   Fix  :: (CVal a, CVal b) => (a :-> b -> a :-> b) -> Alg (a -> b)
 
+(.<) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
+(.<) = CmpOp Lt
+(.<=) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
+(.<=) = CmpOp Le
+(.>) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
+(.>) = CmpOp Gt
+(.>=) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
+(.>=) = CmpOp Ge
+
+neg :: (Num a, CVal a) => Alg a -> Alg a
+neg = UnOp Neg
+
+instance (CVal a, Num a) => Num (Alg a) where
+  (+) = BinOp Plus
+  (*) = BinOp Mult
+  (-) = BinOp Minus
+  abs v = bif (v .< Lit 0) (neg v) v
+  signum v = bif (v .< Lit 0) (Lit $ -1) (Lit $ 1)
+  fromInteger i = Lit $ fromInteger i
+  negate = neg
+
+
 newtype (:->) a b = Fun { unFun :: Alg (a -> b)}
+
+bif :: CVal a => Alg Bool -> Alg a -> Alg a -> Alg a
+bif = BIf
+
+mif :: CVal a => Alg ((Bool, a) -> Either a a)
+mif = Abs $ \i -> BIf (Fst i) (Inl $ Snd i) (Inr $ Snd i)
+
+tif :: (CVal a, CVal b) => a :-> Bool -> a :-> b -> a :-> b -> a :-> b
+tif test l r = test &&& id >>> Fun mif >>> l ||| r
 
 ordAlg :: Integer -> Alg a -> Alg b -> Ordering
 ordAlg _ (Lit (x :: a)) (Lit (y :: b)) =
@@ -145,6 +197,33 @@ ordAlg _ _ (BVar _) = GT
 ordAlg _ (CVal _) (CVal _) = error "Panic! Cannot compare C Expressions"
 ordAlg _ (CVal _) _ = LT
 ordAlg _ _ (CVal _) = GT
+ordAlg l (BIf b1 l1 r1) (BIf b2 l2 r2) =
+  case (ordAlg l b1 b2, ordAlg l l1 l2, ordAlg l r1 r2) of
+    (EQ, EQ, o) -> o
+    (EQ, o , _) -> o
+    (o , _ , _) -> o
+ordAlg l (UnOp o1 x1) (UnOp o2 x2) =
+  case (compare o1 o2, ordAlg l x1 x2) of
+    (EQ, o ) -> o
+    (o , _ ) -> o
+ordAlg _ UnOp{} _ = LT
+ordAlg _ _ UnOp{} = GT
+ordAlg l (BinOp b1 l1 r1) (BinOp b2 l2 r2) =
+  case (compare b1 b2, ordAlg l l1 l2, ordAlg l r1 r2) of
+    (EQ, EQ, o) -> o
+    (EQ, o , _) -> o
+    (o , _ , _) -> o
+ordAlg _ BinOp{} _ = LT
+ordAlg _ _ BinOp{} = GT
+ordAlg l (CmpOp b1 l1 r1) (CmpOp b2 l2 r2) =
+  case (compare b1 b2, ordAlg l l1 l2, ordAlg l r1 r2) of
+    (EQ, EQ, o) -> o
+    (EQ, o , _) -> o
+    (o , _ , _) -> o
+ordAlg _ CmpOp{} _ = LT
+ordAlg _ _ CmpOp{} = GT
+ordAlg _ BIf{} _ = LT
+ordAlg _ _ BIf{} = GT
 ordAlg l (Ap f x) (Ap g y) =
   case ordFun l f g of
     EQ -> ordAlg l x y
@@ -203,6 +282,9 @@ ordAlg l (Proj i x) (Proj j y) =
     (o , _) -> o
 ordAlg _ Proj{} _ = LT
 ordAlg _ _ Proj{} = GT
+ordAlg l (VLen x) (VLen y) = ordAlg l x y
+ordAlg _ VLen{} _ = LT
+ordAlg _ _ VLen{} = GT
 ordAlg _ Bot Bot = EQ
 ordAlg _ Bot{} _ = LT
 ordAlg _ _ Bot{} = GT
@@ -242,6 +324,8 @@ printAlg _ (Lit x) = show x
 printAlg _ (Prim s _) = s
 printAlg _ (BVar i) = "?" ++ show i
 printAlg _ (CVal i) = show i
+printAlg l (BIf b x y) = "if (" ++ printAlg l b ++ ") then ("
+                         ++ printAlg l x ++ ") else (" ++ printAlg l y ++ ")"
 printAlg l (Ap (Fun f) x) = printAlg l f ++ "(" ++ printAlg l x ++ ")"
 printAlg l (Abs f) = "(fun->" ++ printAlg (l+1) (f (BVar l)) ++ ")"
 printAlg l (Fst x) = "fst (" ++ printAlg l x ++")"
@@ -259,6 +343,7 @@ printAlg l (VLit ls) = "[" ++ app (map (printAlg l) ls) ++ "]"
     app [] = ""
     app [h] = h
     app (h:t) = h ++ "," ++ app t
+printAlg l (VLen x) = "length (" ++ printAlg l x ++ ")"
 printAlg l (Proj i v) = "(" ++ printAlg l v ++ ")!" ++
                         "(" ++ printAlg l i ++ ")"
 printAlg _ Bot = "undef"
@@ -266,6 +351,7 @@ printAlg l (Fix f) = "fix ?" ++ show l ++
                      "{" ++ printFun (f (Fun $ BVar l)) ++ "}"
   where
     printFun (Fun ff) = printAlg (1+l) ff
+printAlg _ _ = "TODO: printAlg"
 
 fun :: (CVal a, CVal b) => (Alg a -> Alg b) -> a :-> b
 fun f = Fun $ Abs f
@@ -314,15 +400,19 @@ encName (Fun x) = encAlg x
 -- Only returns sensible names if
 encAlg :: Alg (a -> b) -> String
 encAlg (Prim f _) = f
-encAlg (Ap f _) = encName f
+--encAlg (Ap f _) = encName f
 encAlg (Abs _) = "fun"
-encAlg (Fst _) = "proj_1"
-encAlg (Snd _) = "proj_2"
+--encAlg BinOp{} = "bin"
+--encAlg UnOp{} = "un"
+--encAlg CmpOp{} = "cmp"
+--encAlg (Fst _) = "proj_1"
+--encAlg (Snd _) = "proj_2"
 encAlg (BVar _) = "var"
 encAlg (CVal _) = "evar"
-encAlg (Lit _) = ""
-encAlg (Case _ f g) = "case_" ++ encName f ++ "_" ++ encName g
-encAlg (Proj _ _) = ""
+--encAlg BIf{} = "if"
+--encAlg (Lit _) = ""
+--encAlg (Case _ f g) = "case_" ++ encName f ++ "_" ++ encName g
+--encAlg (Proj _ _) = ""
 encAlg Bot = "error"
 encAlg (Fix f) = "fix_" ++ encName (f (Fun $ BVar 0))
 
@@ -353,6 +443,7 @@ instance CArrChoice (:->) where
 instance CArrVec Int (:->) where
   proj = Fun $ Abs $ \v -> Proj (afst v) (asnd v)
   vec f = Fun $ Abs (\v -> Vec (fun $ \x -> ap f (apair x (asnd v))) (afst v))
+  vsize = Fun $ Abs $ \v -> VLen v
 
 instance CArrFix (:->) where
   fix f = Fun $ Fix f
@@ -378,12 +469,49 @@ compileAlg (Lit l) rv = cret rv <$> cVal l
 compileAlg (Prim v _) rv = pure $ cret rv $ cVar $ internalIdent v
 compileAlg (BVar _) _ = error "Panic! Cannot find open term!"
 compileAlg (CVal v) rv = pure $ cret rv v
+compileAlg (BIf b x y) rv = do
+  (v, dv) <- declVar b
+  cb <- compileAlg b v
+  cx <- compileAlg x rv
+  cy <- compileAlg y rv
+  pure $ dv ++ cb ++ [CBlockStmt $ CIf v (CCompound [] cx undefNode)
+                     (Just $ CCompound [] cy undefNode) undefNode]
+compileAlg (UnOp o x) rv = do
+  cx <- compileAlg x rv
+  pure $ cx ++ [CBlockStmt $ cExpr $ cAssign rv (CUnary (go o) rv undefNode)]
+  where
+    go Neg = CMinOp
+compileAlg (BinOp o x y) rv = do
+  (v, dv) <- declVar x
+  cx <- compileAlg x rv
+  cy <- compileAlg y v
+  pure $ dv ++ cx ++ cy ++
+    [CBlockStmt $ cExpr $ cAssign rv (CBinary (go o) rv v undefNode)]
+  where
+    go Plus = CAddOp
+    go Minus = CSubOp
+    go Mult = CMulOp
+    go Div = CDivOp
+    go Mod = CRmdOp
+compileAlg (CmpOp o x y) rv = do
+  (vx, dvx) <- declVar x
+  (vy, dvy) <- declVar y
+  cx <- compileAlg x vx
+  cy <- compileAlg y vy
+  pure $ dvx ++ dvy ++ cx ++ cy ++
+    [CBlockStmt $ cExpr $ cAssign rv (CBinary (go o) vx vy undefNode)]
+  where
+    go Lt = CLeOp
+    go Le = CLeqOp
+    go Gt = CGrOp
+    go Ge = CGeqOp
+    go Eq = CEqOp
 compileAlg (Ap f x) rv = do
   (v, dv) <- declVar x
   cx <- compileAlg x v -- XXX: Fix strict semantics!!!!!
   cf <- compileFun (unFun f) v rv
   pure $ dv ++ cx ++ cf
-compileAlg (Abs _) _ = error "Panic! A function cannot be a CVal!"
+--compileAlg (Abs _) _ = error "Panic! A function cannot be a CVal!"
 compileAlg (Fst e) rv = do
   (v, dv) <- declVar e
   cs <- compileAlg e v
@@ -445,8 +573,12 @@ compileAlg (Case e l r) rv = do
 compileAlg Vec{} _ = error "FIXME: vectors not yet supported"
 compileAlg VLit{} _ = error "FIXME: vectors not yet supported"
 compileAlg Proj{} _ = error "FIXME: vectors not yet supported"
+compileAlg (VLen x) rv = do
+  (v, dv) <- declVar x
+  s1 <- compileAlg x v
+  pure $ dv ++ s1 ++ [CBlockStmt $ cExpr $ cAssign rv (cMember v sizeFld)]
 compileAlg Bot{} _ = pure errorAndExit
-compileAlg Fix{} _ = error "Panic! A recursive function cannot be a CVal!"
+--compileAlg Fix{} _ = error "Panic! A recursive function cannot be a CVal!"
 
 domTy :: (CVal a, CVal b) => a :-> b -> CTy a
 domTy _ = getCTy
@@ -463,14 +595,15 @@ compileFun (Abs f) x y = compileAlg (f $ CVal x) y
 compileFun (Prim f _) x y = pure $ cret y fx
   where
     fx = CCall (cVar $ internalIdent f) [x] undefNode
-compileFun (Lit _) _  _ = error "Panic! A literal is not of the form a -> b"
+--compileFun (Lit _) _  _ = error "Panic! A literal is not of the form a -> b"
 compileFun (BVar _) _  _ = error "Panic! Open term"
 compileFun (CVal v) x  y = pure $ cret y $ CCall v [x] undefNode -- Shouldn't happen
-compileFun Ap{} _ _ = error "Panic! Impossible case: arbitrary arity functions not yet supported"
-compileFun Fst{} _ _ = error "Panic! Cannot store a function in a tuple"
-compileFun Snd{} _ _ = error "Panic! Cannot store a function in a tuple"
-compileFun Case{} _ _ = error "Panic! Cannot store a function in an either type"
-compileFun Proj{} _ _ = error "Panic! Cannot store a function in a vector"
+--compileFun Ap{} _ _ = error "Panic! Impossible case: arbitrary arity functions not yet supported"
+--compileFun BIf{} _ _ = error "Panic! Cannot return a function in an if statement"
+--compileFun Fst{} _ _ = error "Panic! Cannot store a function in a tuple"
+--compileFun Snd{} _ _ = error "Panic! Cannot store a function in a tuple"
+--compileFun Case{} _ _ = error "Panic! Cannot store a function in an either type"
+--compileFun Proj{} _ _ = error "Panic! Cannot store a function in a vector"
 compileFun Bot _ _ = pure errorAndExit
 compileFun (Fix f) x y = do -- FIXME: avoid generating multiple functions if they are used repeatedly
   fn <- freshN "fn"
