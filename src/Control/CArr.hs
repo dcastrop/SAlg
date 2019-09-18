@@ -1,9 +1,19 @@
+{-# LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Control.CArr
   ( CArr (..)
   , CArrChoice (..)
+  , CArrIf (..)
   , CArrVec (..)
+  , CArrCmp (..)
   , CArrFix (..)
+  , CAlg
   ) where
 
 import qualified Prelude
@@ -72,12 +82,32 @@ class CArr a => CArrChoice a where
       untag (Left x) = x
       untag (Right y) = y
 
--- No static size checking
-class (Num i, CArr t) => CArrVec i t where
-  proj :: CVal a => t (i, [a]) a
-  vec :: (CVal a, CVal b) => t (i, a) b -> t (i, a) [b]
-  vsize :: CVal a => t [a] i
+class CArrChoice t => CArrIf t where
+  ifThenElse :: (CVal a, CVal b) => t a Bool -> t a b -> t a b -> t a b
 
+-- No static size checking
+class ((forall a. CVal a => Num (t a Int)), CArr t) =>
+      CArrVec t where
+  proj :: CVal a => t (Int, [a]) a
+  vec :: (CVal a, CVal b) => t (Int, a) b -> t (Int, a) [b]
+  vsize :: CVal a => t [a] Int
+
+  vtake :: CVal a => t [a] Int -> t [a] [a]
+  vtake f = f &&& id >>> vec proj
+  vdrop :: CVal a => t [a] Int -> t [a] [a]
+  vdrop f = f &&& id >>> vec (((fst + (snd >>> vsize)) &&& snd) >>> proj)
 
 class CArr t => CArrFix t where
   fix :: (CVal a, CVal b) => (t a b -> t a b) -> t a b
+
+class CArrCmp t where
+  (.<) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
+  (.<=) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
+  (.>) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
+  (.>=) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
+  (.==) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
+
+class (forall a b. (Num b, CVal a, CVal b) => Fractional (t [a] b)) => CArrFrac t where
+instance (forall a b. (Num b, CVal a, CVal b) => Fractional (t [a] b)) => CArrFrac t where
+
+type CAlg t = (CArrIf t, CArrVec t, CArrCmp t, CArrFrac t)

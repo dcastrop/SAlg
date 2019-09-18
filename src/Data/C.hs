@@ -27,6 +27,12 @@ module Data.C
   , cTagl
   , cTagr
   , declVar
+  , Int
+  , Bool
+  , Float
+  , Double
+  , String
+  , Either
   ) where
 
 import Control.Monad.CGen

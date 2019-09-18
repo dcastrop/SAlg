@@ -1,3 +1,4 @@
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE IncoherentInstances #-}
@@ -20,19 +21,22 @@ module Language.Alg
   , CVar (..)
   , (:->)(..)
   , Poly(..)
+  , CArrCmp(..)
+  , prim
   , pmap
-  , (.<)
-  , (.<=)
-  , (.>)
-  , (.>=)
+  , const
+--  , (.<)
+--  , (.<=)
+--  , (.>)
+--  , (.>=)
   , encName
   , tinl
   , tinr
   , fun
   , fix
   , testB
-  , tif
   , bif
+  , mif
   -- , eqInt
   , printAlg
   , apair
@@ -44,12 +48,15 @@ module Language.Alg
   , ordFun
   , compileAlg
   , declareFun
+  , Num(..)
+  , Fractional(..)
   ) where
 
-import Prelude hiding ( id, (.) )
+import Prelude hiding ( id, (.), const )
 import Type.Reflection hiding ( Fun )
 
 import Data.C
+import Data.Ratio ( numerator, denominator )
 import Control.CCat
 import Control.CArr
 import Control.Monad.CGen
@@ -141,18 +148,22 @@ data Alg t where
   VLit :: CVal a => [Alg a] -> Alg [a] -- Static initialization
   Proj :: CVal a => Alg Int -> Alg [a] -> Alg a
   VLen :: CVal a => Alg [a] -> Alg Int
+  VTake :: CVal a => Alg Int -> Alg [a] -> Alg [a]
+  VDrop :: CVal a => Alg Int -> Alg [a] -> Alg [a]
 
   Bot  :: Alg t
   Fix  :: (CVal a, CVal b) => (a :-> b -> a :-> b) -> Alg (a -> b)
 
-(.<) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
-(.<) = CmpOp Lt
-(.<=) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
-(.<=) = CmpOp Le
-(.>) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
-(.>) = CmpOp Gt
-(.>=) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
-(.>=) = CmpOp Ge
+(|<) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
+(|<) = CmpOp Lt
+(|<=) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
+(|<=) = CmpOp Le
+(|>) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
+(|>) = CmpOp Gt
+(|>=) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
+(|>=) = CmpOp Ge
+(|==) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
+(|==) = CmpOp Eq
 
 neg :: (Num a, CVal a) => Alg a -> Alg a
 neg = UnOp Neg
@@ -161,10 +172,15 @@ instance (CVal a, Num a) => Num (Alg a) where
   (+) = BinOp Plus
   (*) = BinOp Mult
   (-) = BinOp Minus
-  abs v = bif (v .< Lit 0) (neg v) v
-  signum v = bif (v .< Lit 0) (Lit $ -1) (Lit $ 1)
+  abs v = bif (v |< Lit 0) (neg v) v
+  signum v = bif (v |< Lit 0) (Lit $ -1) (Lit $ 1)
   fromInteger i = Lit $ fromInteger i
   negate = neg
+
+instance (CVal a, Num a) => Fractional (Alg a) where
+  (/) = BinOp Div
+  recip x = 1 / x
+  fromRational x = fromInteger (numerator x) / fromInteger (denominator x)
 
 
 newtype (:->) a b = Fun { unFun :: Alg (a -> b)}
@@ -172,11 +188,8 @@ newtype (:->) a b = Fun { unFun :: Alg (a -> b)}
 bif :: CVal a => Alg Bool -> Alg a -> Alg a -> Alg a
 bif = BIf
 
-mif :: CVal a => Alg ((Bool, a) -> Either a a)
-mif = Abs $ \i -> BIf (Fst i) (Inl $ Snd i) (Inr $ Snd i)
-
-tif :: (CVal a, CVal b) => a :-> Bool -> a :-> b -> a :-> b -> a :-> b
-tif test l r = test &&& id >>> Fun mif >>> l ||| r
+mif :: CVal a => (Bool, a) :-> Either a a
+mif = fun $ \i -> BIf (Fst i) (Inl $ Snd i) (Inr $ Snd i)
 
 ordAlg :: Integer -> Alg a -> Alg b -> Ordering
 ordAlg _ (Lit (x :: a)) (Lit (y :: b)) =
@@ -285,6 +298,18 @@ ordAlg _ _ Proj{} = GT
 ordAlg l (VLen x) (VLen y) = ordAlg l x y
 ordAlg _ VLen{} _ = LT
 ordAlg _ _ VLen{} = GT
+ordAlg l (VTake i x) (VTake j y) =
+  case (ordAlg l i j, ordAlg l x y) of
+    (EQ, o) -> o
+    (o , _) -> o
+ordAlg _ VTake{} _ = LT
+ordAlg _ _ VTake{} = GT
+ordAlg l (VDrop i x) (VDrop j y) =
+  case (ordAlg l i j, ordAlg l x y) of
+    (EQ, o) -> o
+    (o , _) -> o
+ordAlg _ VDrop{} _ = LT
+ordAlg _ _ VDrop{} = GT
 ordAlg _ Bot Bot = EQ
 ordAlg _ Bot{} _ = LT
 ordAlg _ _ Bot{} = GT
@@ -389,7 +414,7 @@ tinr _ v = Inr v
 
 testB :: CVal a => a :-> Bool -> a :-> Either a a
 testB f = Fun $ Abs $ \a ->
-  Case (Ap boolEither (Ap f a)) (cst $ Inl a) (cnst $ Inr a)
+  Case (Ap boolEither (Ap f a)) (cst $ Inl a) (const $ Inr a)
   where
     boolEither = Fun $ Prim "ifB" (\b -> if b then Right () else Left ())
     cst x = (Fun $ Abs $ \_ -> x)
@@ -416,12 +441,15 @@ encAlg (CVal _) = "evar"
 encAlg Bot = "error"
 encAlg (Fix f) = "fix_" ++ encName (f (Fun $ BVar 0))
 
-cnst :: (CVal a, CVal b) => Alg b -> a :-> b
-cnst e = Fun $ Abs $ \_ -> e
+const :: (CVal a, CVal b) => Alg b -> a :-> b
+const e = Fun $ Abs $ \_ -> e
 
 instance CCat (:->) where
   id = Fun $ Abs (\v -> v)
   f . g = Fun $ Abs (\v -> aap f (aap g v))
+
+prim :: (CArr t, CVal a, CVal b) => String -> t a b
+prim n = arr n undefined
 
 instance CArr (:->) where
   arr n v = Fun $ Prim n v
@@ -440,10 +468,35 @@ instance CArrChoice (:->) where
   f +++ g = Fun $ Abs (\v -> acase v (inl . f) (inr . g))
   f ||| g = Fun $ Abs (\v -> acase v f g)
 
-instance CArrVec Int (:->) where
+instance CArrIf (:->) where
+  ifThenElse test l r = test &&& id >>> mif >>> l ||| r
+
+instance (CVal a, CVal b, Num b) => Num (a :-> b) where
+  f + g = (f &&& g) >>> (fun $ \v -> afst v + asnd v)
+  f * g = (f &&& g) >>> (fun $ \v -> afst v * asnd v)
+  abs f = f >>> (fun $ \v -> abs v)
+  signum f = f >>> (fun $ \v -> signum v)
+  negate f = f >>> (fun $ \v -> negate v)
+  fromInteger i = fun $ \_ -> fromInteger i
+
+instance (CVal a, CVal b, Num b) => Fractional (a :-> b) where
+  f / g = (f &&& g) >>> (fun $ \v -> afst v / asnd v)
+  recip x = 1 / x
+  fromRational x = fromInteger (numerator x) / fromInteger (denominator x)
+
+instance CArrCmp (:->) where
+  f .< g = f &&& g >>> (fun $ \v -> afst v |< asnd v)
+  f .<= g = f &&& g >>> (fun $ \v -> afst v |<= asnd v)
+  f .>= g = f &&& g >>> (fun $ \v -> afst v |>= asnd v)
+  f .> g = f &&& g >>> (fun $ \v -> afst v |> asnd v)
+  f .== g = f &&& g >>> (fun $ \v -> afst v |== asnd v)
+
+instance CArrVec (:->) where
   proj = Fun $ Abs $ \v -> Proj (afst v) (asnd v)
   vec f = Fun $ Abs (\v -> Vec (fun $ \x -> ap f (apair x (asnd v))) (afst v))
   vsize = Fun $ Abs $ \v -> VLen v
+  vtake i = Fun $ Abs $ \v -> VTake (aap i v) v
+  vdrop i = Fun $ Abs $ \v -> VDrop (aap i v) v
 
 instance CArrFix (:->) where
   fix f = Fun $ Fix f
@@ -511,7 +564,6 @@ compileAlg (Ap f x) rv = do
   cx <- compileAlg x v -- XXX: Fix strict semantics!!!!!
   cf <- compileFun (unFun f) v rv
   pure $ dv ++ cx ++ cf
---compileAlg (Abs _) _ = error "Panic! A function cannot be a CVal!"
 compileAlg (Fst e) rv = do
   (v, dv) <- declVar e
   cs <- compileAlg e v
@@ -577,6 +629,23 @@ compileAlg (VLen x) rv = do
   (v, dv) <- declVar x
   s1 <- compileAlg x v
   pure $ dv ++ s1 ++ [CBlockStmt $ cExpr $ cAssign rv (cMember v sizeFld)]
+compileAlg (VTake i x) rv = do
+  (v, dv) <- declVar i
+  s1 <- compileAlg i v
+  s2 <- compileAlg x rv
+  pure $ dv ++ s1 ++ s2 ++ [CBlockStmt $ cExpr $ cAssign (cMember rv sizeFld) v]
+compileAlg (VDrop i x) rv = do
+  (v, dv) <- declVar i
+  s1 <- compileAlg i v
+  s2 <- compileAlg x rv
+  pure $ dv ++ s1 ++ s2 ++
+    [ CBlockStmt $ cExpr $ cAssign size (cMinus v)
+    , CBlockStmt $ cExpr $ cAssign elems (cPlus v)]
+  where
+    size = cMember rv sizeFld
+    elems = cMember rv elemsFld
+    cPlus v = CBinary CAddOp elems v undefNode
+    cMinus v = CBinary CAddOp size v undefNode
 compileAlg Bot{} _ = pure errorAndExit
 --compileAlg Fix{} _ = error "Panic! A recursive function cannot be a CVal!"
 
@@ -595,15 +664,8 @@ compileFun (Abs f) x y = compileAlg (f $ CVal x) y
 compileFun (Prim f _) x y = pure $ cret y fx
   where
     fx = CCall (cVar $ internalIdent f) [x] undefNode
---compileFun (Lit _) _  _ = error "Panic! A literal is not of the form a -> b"
 compileFun (BVar _) _  _ = error "Panic! Open term"
-compileFun (CVal v) x  y = pure $ cret y $ CCall v [x] undefNode -- Shouldn't happen
---compileFun Ap{} _ _ = error "Panic! Impossible case: arbitrary arity functions not yet supported"
---compileFun BIf{} _ _ = error "Panic! Cannot return a function in an if statement"
---compileFun Fst{} _ _ = error "Panic! Cannot store a function in a tuple"
---compileFun Snd{} _ _ = error "Panic! Cannot store a function in a tuple"
---compileFun Case{} _ _ = error "Panic! Cannot store a function in an either type"
---compileFun Proj{} _ _ = error "Panic! Cannot store a function in a vector"
+compileFun (CVal v) x  y = pure $ cret y $ CCall v [x] undefNode -- Recursive calls
 compileFun Bot _ _ = pure errorAndExit
 compileFun (Fix f) x y = do -- FIXME: avoid generating multiple functions if they are used repeatedly
   fn <- freshN "fn"
