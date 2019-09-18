@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TupleSections #-}
@@ -8,6 +9,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Language.SPar.Skel
   ( SProc (..)
   , CProc
@@ -21,14 +23,19 @@ module Language.SPar.Skel
   , kfix
   , compileAsLib
   , annotate
+  , ($)
+  , Semigroup (..)
+  , Monoid (..)
   , module X
   ) where
 
 import qualified Prelude
-import Prelude hiding ( (.), fst, snd, id )
+import Prelude hiding ( (.), fst, snd, id, const )
 
-import Control.Monad.RWS.Strict hiding ( lift )
+import Control.Monad.RWS.Strict hiding ( lift, ap )
 import qualified Data.Set as Set
+
+import Data.Ratio (numerator, denominator)
 
 import Data.Map.Strict ( Map )
 import qualified Data.Map.Strict as Map
@@ -83,7 +90,7 @@ incPID st = st { nextPID = nextPID st + 1 }
 -- State monad: next PID
 type PM = RWS AnnStrat () St
 
-data SProc v t a = SProc { unProc :: Env v t , outR :: DType a }
+data SProc v t a = SProc { unProc :: Env v t, outR :: DType a }
 
 type CProc a = SProc Alg (:->) a
 
@@ -158,7 +165,7 @@ printSProc p = printEnv $ unProc p
 newtype (:=>) a b = SSkel { unSkel :: DType a -> PM (CProc b) }
 
 annotate :: AnnStrat -> a :=> b -> a :=> b
-annotate st sk = SSkel $ \a -> local (const st) $ unSkel sk a
+annotate st sk = SSkel $ \a -> local (\_ -> st) $ unSkel sk a
 
 printASkel :: CVal a => AnnStrat -> a :=> b -> IO ()
 printASkel st (SSkel f) = do
@@ -240,27 +247,33 @@ fstSkel = SSkel $ \i -> pproc (ifst i) $ efst i (partsL i)
 sndSkel :: (CVal a, CVal b) => (a, b) :=> b
 sndSkel = SSkel $ \i -> pproc (isnd i) $ esnd i (partsL i)
 
-extendProc :: [PID] -> CProc a -> CProc a
-extendProc ps (SProc e o) = SProc (extendEnv ps e) o
+--------------------------------------------------------------------------------
+-- REFACTOR BELOW INTO INTERNAL
+extendProc :: DType b -> [PID] -> CProc a -> CProc a
+extendProc i ps (SProc e o) = SProc (extendEnv pst e) o
+  where
+    pst = map (\p -> (p, projTy i p)) ps
 
 ppartsL :: CProc a -> [PID]
 ppartsL (SProc e _) = domEnvL e
 
-agreeDom :: CProc a -> CProc b -> CProc a
-agreeDom ea eb = extendProc (ppartsL eb) ea
+agreeDom :: DType c -> CProc a -> CProc b -> CProc a
+agreeDom i ea eb = extendProc i (ppartsL eb ++ partsL i) ea
+--------------------------------------------------------------------------------
 
-splitProc :: (CVal a, CVal b) => CProc a -> CProc b -> CProc (a, b)
-splitProc pl pr =
+splitProc :: (CVal a, CVal b, CVal c)
+          => DType a -> CProc b -> CProc c -> CProc (b, c)
+splitProc ir pl pr =
   SProc { unProc = splitEnv (participants out) (unProc plr) (unProc prl)
         , outR = out
         }
   where
-    plr = agreeDom pl pr
-    prl = agreeDom pr pl
+    plr = agreeDom ir pl pr
+    prl = agreeDom ir pr pl
     out = DPair (outR plr) (outR prl)
 
 splitSkel :: (CVal a, CVal b, CVal c) => a :=> b -> a :=> c -> a :=> (b, c)
-splitSkel f g = SSkel $ \i -> splitProc <$> unSkel f i <*> unSkel g i
+splitSkel f g = SSkel $ \i -> splitProc i <$> unSkel f i <*> unSkel g i
 
 instance CArr (:=>) where
   arr nm f = lift (arr nm f)
@@ -300,12 +313,6 @@ caseSkel f g = SSkel $ \i ->
       let j = DAlt p (DTagL (DVal p l) getCTy) (DTagR getCTy (DVal p r))
       unSkel (caseSkel f g) j
 
-instance CArrChoice (:=>) where
-  inl = inlSkel
-  inr = inrSkel
-  f +++ g = (inl . f) ||| (inr . g)
-  f ||| g = caseSkel f g
-
 choice :: (CVal a, CVal c)
        => PID
        -> DType a
@@ -322,6 +329,50 @@ choice p il ir (SProc l lo) (SProc r ro) =
     o = DAlt p lo ro
     po = participants o
     ps = domEnv l `Set.union` domEnv r
+
+instance CArrChoice (:=>) where
+  inl = inlSkel
+  inr = inrSkel
+  f +++ g = (inl . f) ||| (inr . g)
+  f ||| g = caseSkel f g
+
+sif :: CVal a => (Bool, a) :=> Either a a
+sif = lift mif
+
+instance CArrIf (:=>) where
+  ifThenElse test l r = test &&& id >>> sif >>> l ||| r
+
+sfun :: (CVal a, CVal b) => (Alg a -> Alg b) -> a :=> b
+sfun f = lift $ fun f
+
+instance (CVal a, CVal b, Num b) => Num (a :=> b) where
+  f + g = (f &&& g) >>> (sfun $ \v -> afst v + asnd v)
+  f * g = (f &&& g) >>> (sfun $ \v -> afst v * asnd v)
+  abs f = f >>> (sfun $ \v -> abs v)
+  signum f = f >>> (sfun $ \v -> signum v)
+  negate f = f >>> (sfun $ \v -> negate v)
+  fromInteger i = sfun $ \_ -> fromInteger i
+
+instance (CVal a, CVal b, Num b) => Fractional (a :=> b) where
+  f / g = (f &&& g) >>> (sfun $ \v -> afst v / asnd v)
+  recip x = 1 / x
+  fromRational x = fromInteger (numerator x) / fromInteger (denominator x)
+
+instance CArrCmp (:=>) where
+  f .< g = f &&& g >>>  (lift $ fst .<  snd)
+  f .<= g = f &&& g >>> (lift $ fst .<= snd)
+  f .>= g = f &&& g >>> (lift $ fst .>= snd)
+  f .> g = f &&& g >>>  (lift $ fst .>  snd)
+  f .== g = f &&& g >>> (lift $ fst .== snd)
+
+-- FIXME: sequential so far
+instance CArrVec (:=>) where
+  proj = sfun $ \v -> Proj (afst v) (asnd v)
+  vsize = sfun $ \v -> VLen v
+  vec _f = undefined
+  vtake f = f &&& id >>> sfun (\v -> VTake (afst v) (asnd v))
+  vdrop f = f &&& id >>> sfun (\v -> VDrop (afst v) (asnd v))
+
 
 kfix :: (CVal a, CVal b)
      => Integer

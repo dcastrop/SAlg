@@ -30,6 +30,8 @@ compile fp _args = do
       setImports [ "System.Environment"
                  , "Language.SPar.Skel"
                  , "Control.Monad.CGen"
+                 , "Control.Monad"
+                 , "Prelude"
                  ]
       fns <- getModuleExports $ takeBaseName fp
       ftys <- (map fst . filter snd) <$>
