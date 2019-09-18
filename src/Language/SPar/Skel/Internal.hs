@@ -5,6 +5,7 @@
 module Language.SPar.Skel.Internal
   ( Env
   , CEnv
+  , ATy
   , printEnv
   , domEnv
   , domEnvL
@@ -86,7 +87,7 @@ split p1 p2 (APar (l :: Alg a1 -> CPar b)) (APar (r :: Alg a2 -> CPar c))
         then APar $ \v -> l v >>= \x -> r v >>= \y -> pure (apair x y)
         else APar $ \v -> l v >>= \_ -> r v >>= \_ -> pure (Lit ())
       Nothing -> error $ "Type error in split for participant "
-        ++ show p2 ++ ":"
+        ++ show p2 ++ "\n" ++ show p1 ++ ":"
         ++ printCPar 1 (l $ BVar 0) ++ "\n"
         ++ printCPar 1 (r $ BVar 0) ++ "\n"
         ++ show (domAPar l)        ++ "\n"
@@ -130,11 +131,13 @@ unionEnvK :: (PID -> APar v t -> APar v t -> APar v t)
           -> Env v t -> Env v t -> Env v t
 unionEnvK f e1 e2 = Env { unEnv = Map.unionWithKey f (unEnv e1) (unEnv e2) }
 
-extendEnv :: [PID] -> CEnv -> CEnv
-extendEnv ps e = Env $ foldl' (flip $ Map.alter doExtend) (unEnv e) ps
+extendEnv :: [(PID, ATy)] -> CEnv -> CEnv
+extendEnv ps e = Env $ foldl' extend (unEnv e) ps
   where
-    doExtend Nothing = Just $ APar @() $ \v -> pure v
-    doExtend a = a
+    extend m (k, t) = Map.alter (doExtend t) k m
+    doExtend :: ATy -> Maybe CAPar -> Maybe CAPar
+    doExtend (ATy t) Nothing = Just (aPar t $ \v -> pure v)
+    doExtend _ a = a
 
 agreeDom :: CEnv -> CEnv -> (CEnv, CEnv)
 agreeDom e1 e2 = (Env m1, Env m2)
@@ -153,8 +156,7 @@ cCase ps k l r
       | otherwise         = l
 
 caseEnv :: Set PID -> CEnv -> CEnv -> CEnv
-caseEnv ps e1 e2 =
-  Env { unEnv = Map.unionWithKey (cCase ps) (unEnv e1') (unEnv e2') }
+caseEnv ps e1 e2 = unionEnvK (cCase ps) e1' e2'
   where
     (e1', e2') = agreeDom e1 e2
 
