@@ -20,7 +20,6 @@ module Language.SPar.Skel
   , AnnStrat
   , ann
   , printASkel
-  , kfix
   , compileAsLib
   , annotate
   , ($)
@@ -32,7 +31,7 @@ module Language.SPar.Skel
 import qualified Prelude
 import Prelude hiding ( (.), fst, snd, id, const )
 
-import Control.Monad.RWS.Strict hiding ( lift, ap )
+import Control.Monad.RWS.Strict hiding ( lift, ap, fix )
 import qualified Data.Set as Set
 
 import Data.Ratio (numerator, denominator)
@@ -81,7 +80,7 @@ emptyDefs = Defs Map.empty Map.empty
 data St = St { nextPID :: PID, defs :: Defs }
 
 emptySt :: St
-emptySt = St 0 emptyDefs
+emptySt = St 1 emptyDefs
 
 incPID :: St -> St
 incPID st = st { nextPID = nextPID st + 1 }
@@ -110,17 +109,18 @@ compileAsLib :: (CVal a, CVal b) => String -> AnnStrat -> a :=> b -> CGen ()
 compileAsLib fpn st f = do
   mapM_ (uncurry declF) df
   declareEnv fpn p
-  fns <- mapM (wrapParts fpn) [1..pids - 1]
+  fns <- mapM (wrapParts fpn) pds
   av <- freshVar
   aty <- cTySpec $ domTy f
   bty <- cTySpec $ codTy f
   newFun (internalIdent fpn, bty) [(av, aty)]
-    $ body fpn av 0 $ zip [1..pids-1] fns
+    $ body fpn av 0 $ zip pds fns
   newHeaderFun (internalIdent fpn) bty [aty]
   where
+    pds = filter (/= 0) $ domEnvL p
     declF :: String -> AAlg -> CGen ()
     declF fn (AAlg af) = declareFun fn af
-    (SProc p _, St pids (Defs (Map.toList -> df) _), ()) =
+    (SProc p _, St _ (Defs (Map.toList -> df) _), ()) =
       runRWS (unSkel (f >>> gather 0) $ DVal 0 getCTy) st emptySt
 
 wrapParts :: String -> PID -> CGen Ident
@@ -373,11 +373,17 @@ instance CArrVec (:=>) where
   vtake f = f &&& id >>> sfun (\v -> VTake (afst v) (asnd v))
   vdrop f = f &&& id >>> sfun (\v -> VDrop (afst v) (asnd v))
 
+instance CArrFix (:=>) where
+  fix f = lift $ fix f
+  kfix k f
+    | k <= 0 = lift (Fun $ Fix f)
+  kfix k f = f (kfix (k-1) f)
 
-kfix :: (CVal a, CVal b)
-     => Integer
-     -> (forall t. CArrChoice t => t a b -> t a b)
-     -> a :=> b
-kfix k f
-  | k <= 0 = lift (Fun $ Fix f)
-kfix k f = f (kfix (k-1) f)
+instance CArrPar (:=>) (:->) where
+  newProc f = SSkel $ \i -> do
+    p <- gets nextPID <* modify incPID
+    n <- newDef f
+    pproc (DVal p getCTy) $ kleisliEnv (msg i p) (singleton i p $ \v -> run n f v)
+  runAt f p = SSkel $ \i -> do
+    n <- newDef f
+    pproc (DVal p getCTy) $ kleisliEnv (msg i p) (singleton i p $ \v -> run n f v)

@@ -13,6 +13,7 @@ module Control.CArr
   , CArrVec (..)
   , CArrCmp (..)
   , CArrFix (..)
+  , CArrPar (..)
   , CAlg
   ) where
 
@@ -98,7 +99,8 @@ class ((forall a. CVal a => Num (t a Int)), CArr t) =>
   vdrop f = f &&& id >>> vec (((fst + (snd >>> vsize)) &&& snd) >>> proj)
 
 class CArr t => CArrFix t where
-  fix :: (CVal a, CVal b) => (t a b -> t a b) -> t a b
+  fix :: (CVal a, CVal b) => (forall f. CAlg f => f a b -> f a b) -> t a b
+  kfix :: (CVal a, CVal b) => Int -> (forall f. CAlg f => f a b -> f a b) -> t a b
 
 class CArrCmp t where
   (.<) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
@@ -109,5 +111,11 @@ class CArrCmp t where
 
 class (forall a b. (Num b, CVal a, CVal b) => Fractional (t [a] b)) => CArrFrac t where
 instance (forall a b. (Num b, CVal a, CVal b) => Fractional (t [a] b)) => CArrFrac t where
+
+type PID = Integer
+
+class (CArr f, CArr t) => CArrPar t f where
+  newProc :: (CVal a, CVal b) => f a b -> t a b
+  runAt :: (CVal a, CVal b) => f a b -> PID -> t a b
 
 type CAlg t = (CArrIf t, CArrVec t, CArrCmp t, CArrFrac t)
