@@ -114,8 +114,8 @@ instance (forall a b. (Num b, CVal a, CVal b) => Fractional (t [a] b)) => CArrFr
 
 type PID = Integer
 
-class (CArr f, CArr t) => CArrPar t f where
-  newProc :: (CVal a, CVal b) => f a b -> t a b
-  runAt :: (CVal a, CVal b) => f a b -> PID -> t a b
+class CArr t => CArrPar t where
+  newProc :: (CVal a, CVal b) => t a b -> t a b
+  runAt :: (CVal a, CVal b) => t a b -> PID -> t a b
 
-type CAlg t = (CArrIf t, CArrVec t, CArrCmp t, CArrFrac t)
+type CAlg t = (CArrIf t, CArrVec t, CArrCmp t, CArrFrac t, CArrPar t)

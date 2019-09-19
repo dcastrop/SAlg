@@ -59,8 +59,7 @@ data SPar v t a where
        -> SPar v t b
 
   MRun :: (CVal a, CVal b)
-       => String
-       -> t a b
+       => t a b
        -> v a
        -> (v b -> SPar v t c)
        -> SPar v t c
@@ -72,6 +71,13 @@ data SPar v t a where
        -> (v c -> SPar v t d)
        -> SPar v t d
 
+  MIf :: CVal a
+       => v Bool
+       -> SPar v t (v a)
+       -> SPar v t (v a)
+       -> (v a -> SPar v t b)
+       -> SPar v t b
+
   MRet :: a
        -> SPar v t a
 
@@ -82,11 +88,13 @@ isVar _ _ = False
 isCase :: CPar a -> Bool
 isCase (MCse l kl kr k)
   | isVar l 0 = True
-  | otherwise = isCase (kl (BVar 1)) || isCase (kr (BVar 1)) || isCase (k (BVar 1))
+  | otherwise = isCase (kl (BVar 1))
+                || isCase (kr (BVar 1))
+                || isCase (k (BVar 1))
 isCase (MSnd _ _ k) = isCase k
 isCase (MRcv _ _ k) = isCase (k (BVar 1))
-isCase (MRun _ _ _ k) = isCase (k (BVar 1))
-isCase (MRet _) = False
+isCase (MRun _ _ k) = isCase (k (BVar 1))
+isCase _ = False
 
 
 isInl :: CPar a -> Bool
@@ -104,9 +112,10 @@ isInr = pRet iir
 pRet :: (Alg a -> Bool) -> CPar a -> Bool
 pRet p (MRet x) = p x
 pRet p (MCse _ _ _ k) = pRet p (k (BVar 0))
-pRet p (MRun _ _ _ k) = pRet p (k (BVar 0))
+pRet p (MRun _ _ k) = pRet p (k (BVar 0))
 pRet p (MRcv _ _ k) = pRet p (k (BVar 0))
 pRet p (MSnd _ _ k) = pRet p k
+pRet p (MIf _ _ _ k) = pRet p (k (BVar 0))
 
 printCPar :: Integer -> CPar a -> String
 printCPar l (MSnd v p k)
@@ -114,13 +123,18 @@ printCPar l (MSnd v p k)
 printCPar l (MRcv p _ k)
   = "recv " ++ show p ++ " ; /?" ++ show l ++ ". \n "
   ++ printCPar (l+1) (k (BVar l))
-printCPar l (MRun n _ x k)
-  = "run " ++ n ++ "(" ++ printAlg l x
+printCPar l (MRun _ x k)
+  = "run " ++ "(" ++ printAlg l x
   ++ ") ; /?" ++ show l ++ ". \n" ++ printCPar (l+1) (k (BVar l))
 printCPar l (MCse v x y k)
   = "case (" ++ printAlg l v ++ ") \n " ++
     "(/?" ++ show l ++ ". " ++ printCPar (l+1) (x (BVar l)) ++ ") \n" ++
     "(/?" ++ show l ++ ". " ++ printCPar (l+1) (y (BVar l)) ++ ") ; /?"
+    ++ show l ++ ". \n " ++ printCPar (l+1) (k (BVar l))
+printCPar l (MIf v x y k)
+  = "if (" ++ printAlg l v ++ ") \n " ++
+    "(/?" ++ show l ++ ". " ++ printCPar l x ++ ") \n" ++
+    "(/?" ++ show l ++ ". " ++ printCPar l y ++ ") ; /?"
     ++ show l ++ ". \n " ++ printCPar (l+1) (k (BVar l))
 printCPar l (MRet x) = "end " ++ printAlg l x
 
@@ -137,12 +151,17 @@ type SType a = SPar TypeRep TyFun (TypeRep a)
 commStruct :: (CVal a, CAp t v) => SPar v t (v a) -> SType a
 commStruct (MSnd v p k) = MSnd (getType v) p (commStruct k)
 commStruct (MRcv p t k) = MRcv p t (\_ -> commStruct (k var))
-commStruct (MRun n f v k) =
-  MRun n (getTyFun f) (getType v) (\_ -> commStruct (k var))
+commStruct (MRun f v k) =
+  MRun (getTyFun f) (getType v) (\_ -> commStruct (k var))
 commStruct (MCse v kl kr k) =
   MCse (getType v)
     (\_ -> commStruct (kl var))
     (\_ -> commStruct (kr var))
+    (\_ -> commStruct (k var))
+commStruct (MIf v kl kr k) =
+  MIf (getType v)
+    (commStruct kl)
+    (commStruct kr)
     (\_ -> commStruct (k var))
 commStruct (MRet _) = MRet typeRep
 
@@ -153,13 +172,18 @@ pprSType (MSnd v p k) =
 pprSType (MRcv p t k) =
   show p ++ " ? (" ++ show t ++ "); " ++
   pprSType (k typeRep)
-pprSType (MRun n f v k) =
-  "{ " ++ n ++ " : " ++ show (unTyFun f) ++ " } " ++ show v ++ "; " ++
+pprSType (MRun f v k) =
+  "{ " ++ show (unTyFun f) ++ " } " ++ show v ++ "; " ++
   pprSType (k typeRep)
 pprSType (MCse v kl kr k) =
   "case (" ++ show v ++ ") (" ++
   pprSType (kl typeRep) ++ " | " ++
   pprSType (kr typeRep) ++ "); " ++
+  pprSType (k typeRep)
+pprSType (MIf _v kl kr k) =
+  "if (" ++
+  pprSType kl ++ " | " ++
+  pprSType kr ++ "); " ++
   pprSType (k typeRep)
 pprSType (MRet v) =
   "end (" ++ show v ++ ")"
@@ -264,8 +288,8 @@ recv p = MRcv p typeRep MRet
 trecv :: forall a t. CVal a => t a -> PID -> CPar a
 trecv _ p = MRcv p typeRep MRet
 
-run :: (CVal a, CVal b) => String -> a :-> b -> Alg a -> CPar b
-run n f v = MRun n f v MRet
+run :: (CVal a, CVal b) => a :-> b -> Alg a -> CPar b
+run f v = MRun f v MRet
 
 mCse :: (CVal a, CVal b, CVal c)
      => Alg (Either a b)
@@ -274,6 +298,7 @@ mCse :: (CVal a, CVal b, CVal c)
      -> CPar c
 mCse (Inl v) f _ = f v
 mCse (Inr v) _ g = g v
+mCse (Case v l r) f g = mCse v (\x -> mCse (ap l x) f g) (\x -> mCse (ap r x) f g)
 mCse mv f g = MCse mv f g (\x -> MRet x)
 
 branch :: CVal a => PID -> CPar a -> CPar a -> CPar a
@@ -294,8 +319,9 @@ select v ps l r = mCse v cl cr
 instance CAp t v => Functor (SPar v t) where
   fmap f (MSnd x p k) = MSnd x p (fmap f k)
   fmap f (MRcv p t k) = MRcv p t $ fmap (fmap f) k
-  fmap f (MRun n t a k) = MRun n t a $ fmap (fmap f) k
+  fmap f (MRun t a k) = MRun t a $ fmap (fmap f) k
   fmap f (MCse e kl kr k) = MCse e kl kr (fmap (fmap f) k)
+  fmap f (MIf e kl kr k) = MIf e kl kr (fmap (fmap f) k)
   fmap f (MRet v) = MRet $ f v
 
 instance CAp t v => Applicative (SPar v t) where
@@ -305,8 +331,9 @@ instance CAp t v => Applicative (SPar v t) where
 join :: SPar v t (SPar v t a) -> SPar v t a
 join (MSnd e p k) = MSnd e p $ join k
 join (MRcv p t k) = MRcv p t $ fmap join k
-join (MRun n t a k) = MRun n t a $ fmap join k
+join (MRun t a k) = MRun t a $ fmap join k
 join (MCse e kl kr k) = MCse e kl kr (fmap join k)
+join (MIf e kl kr k) = MIf e kl kr (fmap join k)
 join (MRet f) = f
 
 instance CAp t v => Monad (SPar v t) where
@@ -315,15 +342,16 @@ instance CAp t v => Monad (SPar v t) where
 simpl :: CVal a => CPar a -> CPar a
 simpl (MSnd e p k) = MSnd e p $ simpl k
 simpl (MRcv p t k) = MRcv p t $ \x -> simpl (k x)
-simpl (MRun n t a k) = MRun n t a $ \x -> simpl (k x)
+simpl (MRun t a k) = MRun t a $ \x -> simpl (k x)
 simpl (MCse e kl kr k)
   | isCase (k (BVar 0)) && isInl (kl (BVar 0)) && isInr (kr (BVar 0))
   = mCse e (\x -> simpl $ kl x >>= k) (\x -> simpl $ kr x >>= k)
   | otherwise =
     mCse e (\x -> simpl $ kl x) (\x -> simpl $ kr x) >>= \y -> simpl (k y)
+simpl (MIf e kl kr k) = MIf e (simpl kl) (simpl kr) $ \x -> simpl (k x)
 simpl m@MRet{} = m
 
-declareParFun :: (CVal a, CVal b) => String -> PID -> (Alg a -> CPar b) -> CGen ()
+declareParFun :: (CVal a, CVal b) => String -> PID -> (Alg a -> CPar b) -> CGen ASt ()
 declareParFun pn p f
   | eraseTy (domTy f) == ECUnit = do
       cv <- freshVar
@@ -347,10 +375,10 @@ declareParFun pn p f
     dty = domTy f
     cty = codTy f
 
-codeGen :: CVal a => PID -> CPar a -> CExpr -> CGen [CBlockItem]
+codeGen :: CVal a => PID -> CPar a -> CExpr -> CGen ASt [CBlockItem]
 codeGen self = cgen
   where
-    cgen :: forall a. CVal a => CPar a -> CExpr -> CGen [CBlockItem]
+    cgen :: forall a. CVal a => CPar a -> CExpr -> CGen ASt [CBlockItem]
     cgen (MSnd e@(CVal iv)  p  k) rv = do
       s1 <- csend self p (getTy e) $ iv
       s2 <- cgen k rv
@@ -368,25 +396,12 @@ codeGen self = cgen
       s1 <- crecv self p (getTy ty) $ cVar v1
       s2 <- cgen (fk $ CVal $ cVar v1) rv
       pure $ dv1 ++ s1 ++ s2
-    cgen (MRun f x e@(CVal v1) fk) rv = do
-      v2 <- freshVar
-      dv2 <- v2 <:: (Ap x e)
-      s2 <- cgen (fk $ CVal $ cVar v2) rv
-      pure $ dv2 ++ erun v2 v1 : s2
-      where
-        erun vx vy =
-          CBlockStmt $ cExpr $ cAssign (cVar vx) $ cCall (internalIdent f) [vy]
-    cgen (MRun f x e fk) rv = do
-      v1 <- freshVar
-      v2 <- freshVar
-      dv1 <- v1 <:: e
-      dv2 <- v2 <:: (Ap x e)
-      s1 <- compileAlg e $ cVar v1
-      s2 <- cgen (fk $ CVal $ cVar v2) rv
-      pure $ dv1 ++ dv2 ++ s1 ++ erun v2 (cVar v1) : s2
-      where
-        erun vx vy =
-          CBlockStmt $ cExpr $ cAssign (cVar vx) $ cCall (internalIdent f) [vy]
+    cgen (MRun f e fk) rv = do
+      v <- freshVar
+      dv <- v <:: (Ap f e)
+      s1 <- compileAlg (ap f e) $ cVar v
+      s2 <- cgen (fk $ CVal $ cVar v) rv
+      pure $ dv ++ s1 ++ s2
     cgen (MCse e@(CVal v1) kl kr fk) rv = do
       vl <- freshVar
       vr <- freshVar
@@ -448,6 +463,16 @@ codeGen self = cgen
               untagR
                 | b = cVar cUnit
                 | otherwise = cMember (cMember (cVar v1) valFld) inrFld
+    cgen (MIf e kl kr fk) rv = do
+      (v1, dv1) <- declVar e
+      (v2, dv2) <- declVar $ domTy fk
+      cb <- compileAlg e v1
+      cx <- cgen kl v2
+      cy <- cgen kr v2
+      ck <- cgen (fk $ CVal v2) rv
+      pure $ dv1 ++ dv2 ++ cb ++
+        (CBlockStmt $ CIf v1 (CCompound [] cx undefNode)
+                      (Just $ CCompound [] cy undefNode) undefNode) : ck
     cgen (MRet (CVal iv)) rv =
       pure [CBlockStmt  $ cExpr $ CAssign CAssignOp rv iv undefNode]
     cgen (MRet v) rv = compileAlg v rv

@@ -45,6 +45,9 @@ module Control.Monad.CGen
   , addComment
   , typeSpec
   , newHeaderFun
+  , warn
+  , ustate
+  , getUstate
   , module X
   ) where
 
@@ -208,7 +211,7 @@ elemsFld = internalIdent "elems"
 sizeFld :: Ident
 sizeFld = internalIdent "size"
 
-typeSpec :: ECTy -> CGen ([CDeclSpec], [CDerivedDeclr])
+typeSpec :: ECTy -> CGen st ([CDeclSpec], [CDerivedDeclr])
 typeSpec ECUnit = (,) <$> declare tyUnit unitTySpec <*> pure []
 typeSpec ECInt = pure $ ([CTypeSpec $ CIntType undefNode], [])
 typeSpec ECBool = pure $ ([CTypeSpec $ CIntType undefNode], [])
@@ -241,7 +244,7 @@ data Chan = Chan { chname :: Ident
                  , chrecv :: Ident
                  }
 
-data CGSt =
+data CGSt st =
   CGSt { varGen :: [String] -- ^ Free variable generator
 
        , decls :: Map Ident CExtDecl -- ^ Mapping from identifier to declaration
@@ -251,20 +254,24 @@ data CGSt =
 
        , headerDecls :: Map Ident CExtDecl
        , hdeclOrder :: [Ident]
+       , externalSt :: st
        }
 
-lookComm :: Ident -> CGSt -> String
+lookComm :: Ident -> CGSt st -> String
 lookComm i st = maybe "" id $ Map.lookup i $ comm st
 
-isDeclared :: Ident -> CGen Bool
+isDeclared :: Ident -> CGen st Bool
 isDeclared i = Map.member i <$> gets decls
 
-newtype CGen a = CGen { unCGen :: ExceptT CGErr (RWS () CGLog CGSt) a }
+newtype CGen st a = CGen { unCGen :: ExceptT CGErr (RWS () CGLog (CGSt st)) a }
   deriving (Functor, Applicative, Monad)
 
-generateFile :: FilePath -> CGen () -> IO ()
-generateFile fp m =
-  case runRWS (runExceptT $ unCGen m) () initCGSt of
+warn :: String -> CGen st ()
+warn w = tell $ CGLog [w]
+
+generateFile :: st -> FilePath -> CGen st () -> IO ()
+generateFile ist fp m =
+  case runRWS (runExceptT $ unCGen m) () (initCGSt ist) of
     (Left err, _, clog) -> do
       hPutStrLn stderr $ show clog
       putStrLn $ "\n"
@@ -292,23 +299,24 @@ generateFile fp m =
         printComm "" = ""
         printComm cs = "/*\n * " ++ cs ++ "\n */\n"
 
-deriving instance MonadReader () CGen
-deriving instance MonadWriter CGLog CGen
-deriving instance MonadState CGSt CGen
-deriving instance MonadError CGErr CGen
+deriving instance MonadReader () (CGen st)
+deriving instance MonadWriter CGLog (CGen st)
+deriving instance MonadState (CGSt st) (CGen st)
+deriving instance MonadError CGErr (CGen st)
 
-addComment :: Ident -> String -> CGen ()
+addComment :: Ident -> String -> CGen st ()
 addComment i s = modify $ \st -> st { comm = Map.insert i s $ comm st }
 
-initCGSt :: CGSt
-initCGSt = CGSt { varGen = vgen
-                , decls = Map.empty
-                , comm = Map.empty
-                , declOrder = []
-                , channel = Map.empty
-                , headerDecls = Map.empty
-                , hdeclOrder = []
-                }
+initCGSt :: st -> CGSt st
+initCGSt ist = CGSt { varGen = vgen
+                    , decls = Map.empty
+                    , comm = Map.empty
+                    , declOrder = []
+                    , channel = Map.empty
+                    , headerDecls = Map.empty
+                    , hdeclOrder = []
+                    , externalSt = ist
+                    }
   where
     vgen = map ("v_"++) gen
     gen = [[c] | c <- ['a'..'z']]
@@ -317,7 +325,7 @@ initCGSt = CGSt { varGen = vgen
 newHeaderFun :: Ident
              -> ([CDeclSpec], [CDerivedDeclr])
              -> [([CDeclSpec], [CDerivedDeclr])]
-             -> CGen ()
+             -> CGen st ()
 newHeaderFun fn (dty, dq) args = modify $ \s ->
   s { headerDecls = Map.insert fn decl $ headerDecls s
     , hdeclOrder = fn : hdeclOrder s}
@@ -330,7 +338,7 @@ newHeaderFun fn (dty, dq) args = modify $ \s ->
     mkArgD aq = CDeclr Nothing aq Nothing [] undefNode
 
 
-freshVar :: CGen Ident
+freshVar :: CGen st Ident
 freshVar = gets varGen >>= \(h:t) -> do
   ds <- gets decls
   let nh = internalIdent h
@@ -338,7 +346,7 @@ freshVar = gets varGen >>= \(h:t) -> do
     then modify (\s -> s { varGen = t }) *> freshVar
     else pure (internalIdent h) <* modify (\s -> s { varGen = t} )
 
-freshN :: String -> CGen Ident
+freshN :: String -> CGen st Ident
 freshN f = go (Nothing :: Maybe Int) <$> gets decls
   where
     fullName Nothing  = f
@@ -348,6 +356,12 @@ freshN f = go (Nothing :: Maybe Int) <$> gets decls
       if nh `Map.member` ds
         then go (maybe (Just 0) (\i -> Just (i+1)) m) ds
         else nh
+
+ustate :: (st -> st) -> CGen st ()
+ustate f = modify $ \s -> s { externalSt = f $ externalSt s }
+
+getUstate :: (st -> a) -> CGen st a
+getUstate f = f <$> gets externalSt
 
 cVar :: Ident -> CExpr
 cVar s = CVar s undefNode
@@ -365,7 +379,7 @@ cStr :: String -> CExpr
 cStr s = CConst $ CStrConst (cString s) undefNode
 
 
-declare :: Ident -> [CDeclSpec] -> CGen [CDeclSpec]
+declare :: Ident -> [CDeclSpec] -> CGen st [CDeclSpec]
 declare nm cd = do
   s <- get
   if Map.member nm $ headerDecls s
@@ -382,7 +396,7 @@ declare nm cd = do
 newFun :: (Ident, ([CDeclSpec], [CDerivedDeclr]))
        -> [(Ident, ([CDeclSpec], [CDerivedDeclr]))]
        -> [CBlockItem]
-       -> CGen ()
+       -> CGen st ()
 newFun (f, (rty, fq)) xs body =
   modify $ \s -> s { decls = Map.insert f (CFDefExt fdef) $ decls s
                    , declOrder = f : declOrder s
@@ -397,14 +411,14 @@ newFun (f, (rty, fq)) xs body =
       where
         adeclr = CDeclr (Just a) aq Nothing [] undefNode
 
-declVar :: Ident -> [CDeclSpec] -> [CDerivedDeclr] -> Maybe CInit -> CGen ()
+declVar :: Ident -> [CDeclSpec] -> [CDerivedDeclr] -> Maybe CInit -> CGen st ()
 declVar v t q i =
   modify $ \s ->
     s { decls = Map.insert v (CDeclExt $ varDecl v t q i) $ decls s
       , declOrder = v : declOrder s
       }
 
-newVar :: [CDeclSpec] -> [CDerivedDeclr] -> Maybe CInit -> CGen Ident
+newVar :: [CDeclSpec] -> [CDerivedDeclr] -> Maybe CInit -> CGen st Ident
 newVar t q i = do
   v <- freshVar
   modify $ \s ->
@@ -470,7 +484,7 @@ qmemFld = internalIdent "q_mem"
 -- qfullFld = internalIdent "q_full"
 
 -- TODO: optimize channel type
-getChan :: PID -> PID -> ECTy -> CGen Chan
+getChan :: PID -> PID -> ECTy -> CGen st Chan
 getChan from to ty = do
   s <- get
   case Map.lookup (from, to, ty) (channel s) of
@@ -646,7 +660,7 @@ initChan = CInitList
   , ([],CInitList [] undefNode)
   ] undefNode
 
-csend :: PID -> PID -> ECTy -> CExpr -> CGen [CBlockItem]
+csend :: PID -> PID -> ECTy -> CExpr -> CGen st [CBlockItem]
 csend from to ty v = do
   c <- getChan from to ty
   pure $ [CBlockStmt $ cExpr $
@@ -655,7 +669,7 @@ csend from to ty v = do
 cAddr :: CExpr -> CExpr
 cAddr e = CUnary CAdrOp e undefNode
 
-crecv :: PID -> PID -> ECTy -> CExpr -> CGen [CBlockItem]
+crecv :: PID -> PID -> ECTy -> CExpr -> CGen st [CBlockItem]
 crecv from to ty v = do
   c <- getChan to from ty
   pure $ [ CBlockStmt $ cExpr $

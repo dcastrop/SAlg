@@ -80,7 +80,7 @@ eitherTy _ _ = typeRep
 pairTy :: (CVal a, CVal b) => t a -> t b -> TypeRep (a, b)
 pairTy _ _ = typeRep
 
-cTySpec :: forall a t. CVal a => t a -> CGen ([CDeclSpec], [CDerivedDeclr])
+cTySpec :: forall a t st. CVal a => t a -> CGen st ([CDeclSpec], [CDerivedDeclr])
 cTySpec _ = typeSpec $ eraseTy $ (getCTy :: CTy a)
 
 type family IsFun f where
@@ -89,7 +89,7 @@ type family IsFun f where
 
 class (Eq a, Ord a, Show a, Typeable a, IsFun a ~ 'False) => CVal a where
   getCTy  :: CTy a
-  cVal    :: a -> CGen CExpr
+  cVal    :: a -> CGen st CExpr
 
 instance CVal () where
   getCTy = CUnit
@@ -152,7 +152,7 @@ instance {-# OVERLAPPING #-} CVal String where
   getCTy = CStr
   cVal s = pure $ cStr s
 
-(<::) :: forall a t. CVal a => Ident -> t a -> CGen [CBlockItem]
+(<::) :: forall a t st. CVal a => Ident -> t a -> CGen st [CBlockItem]
 v <:: _ = do
   (t, q) <- cTySpec (getCTy :: CTy a)
   pure $ [CBlockDecl $ varDecl v t q Nothing]
@@ -166,7 +166,7 @@ cCase e l r = CSwitch e cases undefNode
       where
         mbreak = if b then [CBlockStmt $ CBreak undefNode] else []
 
-declVar :: forall a t. CVal a => t a -> CGen (CExpr, [CBlockItem])
+declVar :: forall a t st. CVal a => t a -> CGen st (CExpr, [CBlockItem])
 declVar e
   | getTy e == ECUnit = pure (cVar cUnit, [])
   | otherwise = do

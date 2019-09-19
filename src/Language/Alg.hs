@@ -16,6 +16,7 @@
 {-# LANGUAGE TypeFamilies #-}
 module Language.Alg
   ( module Data.C
+  , AAlg(..)
   , Alg (..)
   , CAp (..)
   , CVar (..)
@@ -40,6 +41,8 @@ module Language.Alg
   , eqFun
   , ordAlg
   , ordFun
+  , ASt
+  , emptyASt
   , compileAlg
   , declareFun
   , Num(..)
@@ -51,6 +54,8 @@ import Type.Reflection hiding ( Fun )
 
 import Data.C
 import Data.Ratio ( numerator, denominator )
+import Data.Map.Strict ( Map )
+import qualified Data.Map.Strict as Map
 import Control.CCat
 import Control.CArr
 import Control.Monad.CGen
@@ -392,6 +397,8 @@ apair e1 e2 = Pair e1 e2
 acase :: (CVal a, CVal b, CVal c) => Alg (Either a b) -> a :-> c -> b :-> c -> Alg c
 acase (Inl v) f _ = aap f v
 acase (Inr v) _ g = aap g v
+acase (Case v l r) f g = acase v (fun $ \x -> acase (aap l x) f g) (fun $ \x -> acase (aap r x) f g)
+acase (BIf b l r) f g = BIf b (acase l f g) (acase r f g)
 acase v f g = Case v f g
 
 tinl :: (CVal a, CVal b) => Alg a -> t b -> Alg (Either a b)
@@ -459,6 +466,7 @@ instance CArrChoice (:->) where
 
 instance CArrIf (:->) where
   ifThenElse test l r = test &&& id >>> mif >>> l ||| r
+  -- fun $ \v -> BIf (aap test v) (aap l v) (aap r v)
 
 instance (CVal a, CVal b, Num b) => Num (a :-> b) where
   f + g = (f &&& g) >>> (fun $ \v -> afst v + asnd v)
@@ -493,7 +501,7 @@ instance CArrFix (:->) where
     | n <= 0 = fix f
     | otherwise = f (kfix (n-1) f)
 
-instance CArrPar (:->) (:->) where
+instance CArrPar (:->) where
   newProc f = f
   f `runAt` _ = f
 
@@ -508,10 +516,28 @@ class (CVar v, CArr f) => CAp f v where
 instance CAp (:->) Alg where
   ap = aap
 
+cSeq :: [CBlockItem] -> CStat
+cSeq l = CCompound [] l undefNode
+
 cret :: CExpr -> CExpr -> [CBlockItem]
 cret rv e = [CBlockStmt $ cExpr $ CAssign CAssignOp rv e undefNode]
 
-compileAlg :: CVal a => Alg a -> CExpr -> CGen [CBlockItem]
+data AAlg where
+  AAlg :: (CVal a, CVal b) => a :-> b -> AAlg
+
+instance Eq AAlg where
+  AAlg f == AAlg g = eqFun 0 f g
+
+instance Ord AAlg where
+  compare (AAlg f) (AAlg g) = ordFun 0 f g
+
+
+type ASt = Map AAlg CExpr
+
+emptyASt :: ASt
+emptyASt = Map.empty
+
+compileAlg :: CVal a => Alg a -> CExpr -> CGen ASt [CBlockItem]
 compileAlg e rv
   | getTy e == ECUnit = pure $ cret rv $ cVar cUnit
 compileAlg (Lit l) rv = cret rv <$> cVal l
@@ -523,11 +549,11 @@ compileAlg (BIf b x y) rv = do
   cb <- compileAlg b v
   cx <- compileAlg x rv
   cy <- compileAlg y rv
-  pure $ dv ++ cb ++ [CBlockStmt $ CIf v (CCompound [] cx undefNode)
-                     (Just $ CCompound [] cy undefNode) undefNode]
+  pure $ dv ++ cb ++
+    [CBlockStmt $ CIf v (cSeq cx) (Just $ cSeq cy) undefNode]
 compileAlg (UnOp o x) rv = do
   cx <- compileAlg x rv
-  pure $ cx ++ [CBlockStmt $ cExpr $ cAssign rv (CUnary (go o) rv undefNode)]
+  pure $ cx ++ [CBlockStmt $ cExpr $ cAssign rv $ CUnary (go o) rv undefNode]
   where
     go Neg = CMinOp
 compileAlg (BinOp o x y) rv = do
@@ -535,7 +561,7 @@ compileAlg (BinOp o x y) rv = do
   cx <- compileAlg x rv
   cy <- compileAlg y v
   pure $ dv ++ cx ++ cy ++
-    [CBlockStmt $ cExpr $ cAssign rv (CBinary (go o) rv v undefNode)]
+    [CBlockStmt $ cExpr $ cAssign rv $ CBinary (go o) rv v undefNode]
   where
     go Plus = CAddOp
     go Minus = CSubOp
@@ -655,7 +681,7 @@ compileFun :: (CVal a, CVal b)
            => Alg (a -> b)
            -> CExpr
            -> CExpr
-           -> CGen [CBlockItem]
+           -> CGen ASt [CBlockItem]
 compileFun (Abs f) x y = compileAlg (f $ CVal x) y
 compileFun e@(Prim f _) x y = do
   whenM (not <$> isDeclared (internalIdent f)) $ do
@@ -668,21 +694,27 @@ compileFun e@(Prim f _) x y = do
 compileFun (BVar _) _  _ = error "Panic! Open term"
 compileFun (CVal v) x  y = pure $ cret y $ CCall v [x] undefNode -- Recursive calls
 compileFun Bot _ _ = pure errorAndExit
-compileFun (Fix f) x y = do -- FIXME: avoid generating multiple functions if they are used repeatedly
-  fn <- freshN "fn"
-  arg <- freshVar
-  rv <- freshVar
-  let ycty = codTy (f $ Fun Bot)
-      xcty = domTy (f $ Fun Bot)
-  xty <- cTySpec xcty
-  yty <- cTySpec ycty
-  drv <- rv <:: ycty
-  fb <- compileFun (unFun $ f (Fun $ CVal $ cVar fn)) (cVar arg) $ cVar rv
-  newFun (fn, yty) [(arg, xty)]
-    (drv ++ fb ++ [CBlockStmt $ CReturn (Just (cVar rv)) undefNode])
-  pure $ cret y $ CCall (cVar fn) [x] undefNode
+compileFun e@(Fix f) x y = do
+  me <- getUstate (Map.lookup (AAlg $ Fun e))
+  fn <- case me of
+          Just v -> pure v
+          Nothing -> do
+            fn <- freshN "fn"
+            arg <- freshVar
+            rv <- freshVar
+            let ycty = codTy (f $ Fun Bot)
+                xcty = domTy (f $ Fun Bot)
+            xty <- cTySpec xcty
+            yty <- cTySpec ycty
+            drv <- rv <:: ycty
+            fb <- compileFun (unFun $ f (Fun $ CVal $ cVar fn)) (cVar arg) $ cVar rv
+            newFun (fn, yty) [(arg, xty)]
+              (drv ++ fb ++ [CBlockStmt $ CReturn (Just (cVar rv)) undefNode])
+            ustate $ Map.insert (AAlg $ Fun e) (cVar fn)
+            pure $ cVar fn
+  pure $ cret y $ CCall fn [x] undefNode
 
-declareFun :: (CVal a, CVal b) => String -> a :-> b -> CGen ()
+declareFun :: (CVal a, CVal b) => String -> a :-> b -> CGen ASt ()
 declareFun fm f@(Fun (Prim fn _))
   | fm == fn = whenM (not <$> isDeclared ifn) $ do
       let ycty = codTy f
@@ -690,6 +722,7 @@ declareFun fm f@(Fun (Prim fn _))
       xty <- cTySpec xcty
       yty <- cTySpec ycty
       newHeaderFun ifn yty [xty]
+      ustate $ Map.insert (AAlg f) (cVar ifn)
   where
     ifn = internalIdent fn
 declareFun (internalIdent -> fn) (Fun (Fix f)) = whenM (not <$> isDeclared fn) $ do
@@ -703,6 +736,8 @@ declareFun (internalIdent -> fn) (Fun (Fix f)) = whenM (not <$> isDeclared fn) $
   fb <- compileFun (unFun $ f (Fun $ CVal $ cVar fn)) (cVar arg) $ cVar rv
   newFun (fn, yty) [(arg, xty)]
     (drv ++ fb ++ [CBlockStmt $ CReturn (Just (cVar rv)) undefNode])
+
+  ustate $ Map.insert (AAlg $ Fun (Fix f)) (cVar fn)
 declareFun (internalIdent -> fn) f = whenM (not <$> isDeclared fn) $ do
   arg <- freshVar
   xty <- cTySpec xcty
@@ -714,6 +749,7 @@ declareFun (internalIdent -> fn) f = whenM (not <$> isDeclared fn) $ do
   fb <- compileFun (unFun f) (cVar arg) $ cVar rv
   newFun (fn, yty) [(arg, xty)]
     (drv ++ fb ++ [CBlockStmt $ CReturn (Just (cVar rv)) undefNode])
+  ustate $ Map.insert (AAlg $ f) (cVar fn)
   where
     ycty = codTy f
     xcty = domTy f
