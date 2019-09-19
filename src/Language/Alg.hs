@@ -25,17 +25,11 @@ module Language.Alg
   , prim
   , pmap
   , const
---  , (.<)
---  , (.<=)
---  , (.>)
---  , (.>=)
   , encName
   , tinl
   , tinr
   , fun
   , fix
-  , testB
-  , bif
   , mif
   -- , eqInt
   , printAlg
@@ -101,9 +95,9 @@ pmap (PP l r) f =
 pmap (PS l r) f =
   case (cdict (getCTy :: CTy b) l, cdict (getCTy :: CTy b) r) of
     (CDict, CDict) ->
-      ( Fun $ Abs $ \x -> Case x
-                          (Fun $ Abs $ \y -> Inl $ Ap lf y)
-                          (Fun $ Abs $ \y -> Inr $ Ap rf y)
+      ( Fun $ Abs $ \x -> acase x
+                          (fun $ \y -> Inl $ ap lf y)
+                          (fun $ \y -> Inr $ ap rf y)
       , PS pl pr
       )
   where
@@ -172,8 +166,8 @@ instance (CVal a, Num a) => Num (Alg a) where
   (+) = BinOp Plus
   (*) = BinOp Mult
   (-) = BinOp Minus
-  abs v = bif (v |< Lit 0) (neg v) v
-  signum v = bif (v |< Lit 0) (Lit $ -1) (Lit $ 1)
+  abs v = BIf (v |< Lit 0) (neg v) v
+  signum v = BIf (v |< Lit 0) (Lit $ -1) (Lit $ 1)
   fromInteger i = Lit $ fromInteger i
   negate = neg
 
@@ -182,14 +176,11 @@ instance (CVal a, Num a) => Fractional (Alg a) where
   recip x = 1 / x
   fromRational x = fromInteger (numerator x) / fromInteger (denominator x)
 
-
 newtype (:->) a b = Fun { unFun :: Alg (a -> b)}
 
-bif :: CVal a => Alg Bool -> Alg a -> Alg a -> Alg a
-bif = BIf
 
 mif :: CVal a => (Bool, a) :-> Either a a
-mif = fun $ \i -> BIf (Fst i) (Inl $ Snd i) (Inr $ Snd i)
+mif = fun $ \i -> BIf (afst i) (Inl $ asnd i) (Inr $ asnd i)
 
 ordAlg :: Integer -> Alg a -> Alg b -> Ordering
 ordAlg _ (Lit (x :: a)) (Lit (y :: b)) =
@@ -409,16 +400,6 @@ tinl v _ = Inl v
 tinr :: (CVal a, CVal b) => t a -> Alg  b -> Alg (Either a b)
 tinr _ v = Inr v
 
---eqInt :: Alg Int -> Int :-> Bool
---eqInt i = Fun $ Ap (Fun $ Prim "eqInt" (==)) i
-
-testB :: CVal a => a :-> Bool -> a :-> Either a a
-testB f = Fun $ Abs $ \a ->
-  Case (Ap boolEither (Ap f a)) (cst $ Inl a) (const $ Inr a)
-  where
-    boolEither = Fun $ Prim "ifB" (\b -> if b then Right () else Left ())
-    cst x = (Fun $ Abs $ \_ -> x)
-
 encName :: a :-> b -> String
 encName (Fun x) = encAlg x
 
@@ -469,12 +450,12 @@ instance CArr (:->) where
   f *** g = Fun $ Abs (\v -> apair (ap f (afst v)) (ap g (asnd v)))
 
 instance CArrChoice (:->) where
-  inl = Fun (Abs Inl)
-  inr = Fun (Abs Inr)
-  left f = Fun $ Abs (\v -> acase v (inl . f) inr)
-  right f = Fun $ Abs (\v -> acase v inl (inr . f))
-  f +++ g = Fun $ Abs (\v -> acase v (inl . f) (inr . g))
-  f ||| g = Fun $ Abs (\v -> acase v f g)
+  inl = fun Inl
+  inr = fun Inr
+  left f  = fun (\v -> acase v (inl . f) inr)
+  right f = fun (\v -> acase v inl (inr . f))
+  f +++ g = fun (\v -> acase v (inl . f) (inr . g))
+  f ||| g = fun (\v -> acase v f g)
 
 instance CArrIf (:->) where
   ifThenElse test l r = test &&& id >>> mif >>> l ||| r
