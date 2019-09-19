@@ -676,7 +676,12 @@ compileFun :: (CVal a, CVal b)
            -> CExpr
            -> CGen [CBlockItem]
 compileFun (Abs f) x y = compileAlg (f $ CVal x) y
-compileFun (Prim f _) x y = pure $ cret y fx
+compileFun e@(Prim f _) x y = do
+  whenM (not <$> isDeclared (internalIdent f)) $ do
+    dt <- cTySpec $ domTy $ Fun e
+    ct <- cTySpec $ codTy $ Fun e
+    newHeaderFun (internalIdent f) ct [dt]
+  pure $ cret y fx
   where
     fx = CCall (cVar $ internalIdent f) [x] undefNode
 compileFun (BVar _) _  _ = error "Panic! Open term"
