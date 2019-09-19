@@ -97,10 +97,10 @@ newtype Env v t = Env { unEnv :: Map PID (APar v t) }
 
 type CEnv = Env Alg (:->)
 
-declareEnv :: String -> CEnv -> CGen ()
+declareEnv :: String -> CEnv -> CGen ASt ()
 declareEnv fn = mapM_ compileRole . Map.toList . unEnv
   where
-    compileRole :: (PID, CAPar) -> CGen ()
+    compileRole :: (PID, CAPar) -> CGen ASt ()
     compileRole (r, APar c) = declareParFun fn r c
 
 

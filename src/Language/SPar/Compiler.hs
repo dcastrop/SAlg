@@ -48,7 +48,7 @@ compile fp _args = do
     compileAll fns = liftIO (putStrLn command) >> runStmt command
       where
         command = "withProgName " ++ show (takeBaseName fp)
-          ++ " (generateFile \"" ++ (takeBaseName fp ++ "\" $ ")
+          ++ " (generateFile emptyASt \"" ++ (takeBaseName fp ++ "\" $ ")
           ++ foldl' (\a b -> a ++ " >> " ++ compileCommand b) "pure ()" fns
           ++ ")"
 

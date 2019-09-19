@@ -48,15 +48,6 @@ import Language.SPar
 import Language.SPar.Skel.Internal
 --import System.Environment
 
-data AAlg where
-  AAlg :: (CVal a, CVal b) => a :-> b -> AAlg
-
-instance Eq AAlg where
-  AAlg f == AAlg g = eqFun 0 f g
-
-instance Ord AAlg where
-  compare (AAlg f) (AAlg g) = ordFun 0 f g
-
 newtype AnnStrat = AnnStrat { unAnnStrat :: [AAlg] }
 
 ann :: (CVal a, CVal b) => a :-> b -> AnnStrat
@@ -72,10 +63,10 @@ instance Monoid AnnStrat where
 inStrat :: (CVal a, CVal b) => a :-> b -> AnnStrat -> Bool
 inStrat f x = AAlg f `elem` unAnnStrat x
 
-data Defs = Defs { defm :: Map String AAlg, revd :: Map AAlg String }
+data Defs = Defs { defm :: Map String AAlg }
 
 emptyDefs :: Defs
-emptyDefs = Defs Map.empty Map.empty
+emptyDefs = Defs Map.empty
 
 data St = St { nextPID :: PID, defs :: Defs }
 
@@ -105,7 +96,7 @@ domTy _ = getCTy
 codTy :: CVal b => a :=> b -> CTy b
 codTy _ = getCTy
 
-compileAsLib :: (CVal a, CVal b) => String -> AnnStrat -> a :=> b -> CGen ()
+compileAsLib :: (CVal a, CVal b) => String -> AnnStrat -> a :=> b -> CGen ASt ()
 compileAsLib fpn st f = do
   mapM_ (uncurry declF) df
   declareEnv fpn p
@@ -118,12 +109,12 @@ compileAsLib fpn st f = do
   newHeaderFun (internalIdent fpn) bty [aty]
   where
     pds = filter (/= 0) $ domEnvL p
-    declF :: String -> AAlg -> CGen ()
+    declF :: String -> AAlg -> CGen ASt ()
     declF fn (AAlg af) = declareFun fn af
-    (SProc p _, St _ (Defs (Map.toList -> df) _), ()) =
+    (SProc p _, St _ (Defs (Map.toList -> df)), ()) =
       runRWS (unSkel (f >>> gather 0) $ DVal 0 getCTy) st emptySt
 
-wrapParts :: String -> PID -> CGen Ident
+wrapParts :: String -> PID -> CGen ASt Ident
 wrapParts fpn p = do
   fn <- freshN $ "fun_thread_" ++ show p
   vn <- freshN "arg"
@@ -203,43 +194,47 @@ annot i f = do
   b <- reader (f `inStrat`)
   if b then gets nextPID <* modify incPID else pure i
 
-getName :: a :-> b -> PM String
-getName f = do
-  nms <- Map.keysSet Prelude.. defm <$> gets defs
-  pure $ go nms Nothing
-  where
-    go nms Nothing
-      | nf `Set.member` nms = go nms (Just (0 :: Integer))
-      | otherwise = nf
-    go nms (Just i)
-      |  nfi `Set.member` nms = go nms (Just $ i+1)
-      | otherwise = nfi
-      where
-        nfi = nf ++ "_" ++ show i
-    nf = encName f
+--getName :: a :-> b -> PM String
+--getName f = do
+--  nms <- Map.keysSet Prelude.. defm <$> gets defs
+--  pure $ go nms Nothing
+--  where
+--    go nms Nothing
+--      | nf `Set.member` nms = go nms (Just (0 :: Integer))
+--      | otherwise = nf
+--    go nms (Just i)
+--      |  nfi `Set.member` nms = go nms (Just $ i+1)
+--      | otherwise = nfi
+--      where
+--        nfi = nf ++ "_" ++ show i
+--    nf = encName f
 
-newDef :: (CVal a, CVal b) => a :-> b -> PM String
---newDef (Fun (Prim f _)) = pure f
-newDef f = do
-  df <- gets defs
-  case Map.lookup (AAlg f) (revd df) of
-    Just n -> pure n
-    Nothing -> do
-      nm <- getName f
-      modify $ \s -> s { defs = df { defm = Map.insert nm (AAlg f) $ defm df
-                                   , revd = Map.insert (AAlg f) nm $ revd df
-                                   }
-                       }
-      pure nm
+--newDef :: (CVal a, CVal b) => a :-> b -> PM String
+----newDef (Fun (Prim f _)) = pure f
+--newDef f = do
+--  df <- gets defs
+--  case Map.lookup (AAlg f) (revd df) of
+--    Just n -> pure n
+--    Nothing -> do
+--      nm <- getName f
+--      modify $ \s -> s { defs = df { defm = Map.insert nm (AAlg f) $ defm df
+--                                   , revd = Map.insert (AAlg f) nm $ revd df
+--                                   }
+--                       }
+--      pure nm
 
 gather :: CVal a => PID -> a :=> a
 gather p = SSkel $ \i -> pproc (DVal p getCTy) $ msg i p
 
+gatherNew :: CVal a => a :=> a
+gatherNew = SSkel $ \i -> do
+  p <- gets nextPID <* modify incPID
+  pproc (DVal p getCTy) $ msg i p
+
 lift :: (CVal a, CVal b) => a :-> b -> a :=> b
 lift f = SSkel $ \i -> do
   p <- annot (anyPID i) f
-  n <- newDef f
-  pproc (DVal p getCTy) $ kleisliEnv (msg i p) (singleton i p $ \v -> run n f v)
+  pproc (DVal p getCTy) $ kleisliEnv (msg i p) (singleton i p $ \v -> run f v)
 
 fstSkel :: (CVal a, CVal b) => (a, b) :=> a
 fstSkel = SSkel $ \i -> pproc (ifst i) $ efst i (partsL i)
@@ -379,11 +374,6 @@ instance CArrFix (:=>) where
     | k <= 0 = lift (Fun $ Fix f)
   kfix k f = f (kfix (k-1) f)
 
-instance CArrPar (:=>) (:->) where
-  newProc f = SSkel $ \i -> do
-    p <- gets nextPID <* modify incPID
-    n <- newDef f
-    pproc (DVal p getCTy) $ kleisliEnv (msg i p) (singleton i p $ \v -> run n f v)
-  runAt f p = SSkel $ \i -> do
-    n <- newDef f
-    pproc (DVal p getCTy) $ kleisliEnv (msg i p) (singleton i p $ \v -> run n f v)
+instance CArrPar (:=>) where
+  newProc f = gatherNew >>> f
+  runAt f p = gather p >>> f
