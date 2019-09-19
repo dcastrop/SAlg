@@ -38,7 +38,6 @@ import Data.Ratio (numerator, denominator)
 
 import Data.Map.Strict ( Map )
 import qualified Data.Map.Strict as Map
--- import Type.Reflection hiding ( Fun )
 
 import Control.CCat as X
 import Control.CArr as X
@@ -46,7 +45,6 @@ import Language.Alg as X
 import Control.Monad.CGen
 import Language.SPar
 import Language.SPar.Skel.Internal
---import System.Environment
 
 newtype AnnStrat = AnnStrat { unAnnStrat :: [AAlg] }
 

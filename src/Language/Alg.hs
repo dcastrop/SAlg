@@ -34,6 +34,7 @@ module Language.Alg
   , mif
   -- , eqInt
   , printAlg
+  , printFun
   , apair
   , afst
   , asnd
@@ -315,27 +316,7 @@ ordFun :: Integer -> a :-> b -> c :-> d -> Ordering
 ordFun l (Fun a) (Fun b) = ordAlg l a b
 
 eqAlg :: Integer -> Alg a -> Alg b -> Bool
-eqAlg _ (Lit (x :: a)) (Lit (y :: b)) =
-  case eqTypeRep (typeRep :: TypeRep a) (typeRep :: TypeRep b) of
-    Just HRefl -> x == y
-    Nothing -> False
-eqAlg _ (Prim f _) (Prim g _) = f == g
-eqAlg _ (BVar x) (BVar y) = x == y
-eqAlg l (Ap (Fun f) x) (Ap (Fun g) y) = eqAlg l f g && eqAlg l x y
-eqAlg l (Abs f) (Abs g) = eqAlg (l+1) (f $ BVar l) (g $ BVar l)
-eqAlg l (Fst x) (Fst y) = eqAlg l x y
-eqAlg l (Snd x) (Snd y) = eqAlg l x y
-eqAlg l (Inl x) (Inl y) = eqAlg l x y
-eqAlg l (Inr x) (Inr y) = eqAlg l x y
-eqAlg l (Pair x y) (Pair z t) = eqAlg l x z && eqAlg l y t
-eqAlg l (Case v (Fun x) (Fun y)) (Case w (Fun z) (Fun t)) =
-  eqAlg l v w && eqAlg l x z && eqAlg l y t
-eqAlg l (Vec (Fun f) x) (Vec (Fun g) y) = eqAlg l f g && eqAlg l x y
-eqAlg l (VLit l1) (VLit l2) = and $ zipWith (eqAlg l) l1 l2
-eqAlg l (Proj i v1) (Proj j v2) = eqAlg l i j && eqAlg l v1 v2
-eqAlg _ Bot Bot = True
-eqAlg l (Fix f1) (Fix f2) = eqFun (1+l) (f1 $ Fun $ BVar l) (f2 $ Fun $ BVar l)
-eqAlg _ _ _ = False
+eqAlg l a b = ordAlg l a b == EQ
 
 eqFun :: Integer -> a :-> b -> c :-> d -> Bool
 eqFun l (Fun a) (Fun b) = eqAlg l a b
@@ -369,10 +350,11 @@ printAlg l (Proj i v) = "(" ++ printAlg l v ++ ")!" ++
                         "(" ++ printAlg l i ++ ")"
 printAlg _ Bot = "undef"
 printAlg l (Fix f) = "fix ?" ++ show l ++
-                     "{" ++ printFun (f (Fun $ BVar l)) ++ "}"
-  where
-    printFun (Fun ff) = printAlg (1+l) ff
+                     "{" ++ printFun (l+1) (f (Fun $ BVar l)) ++ "}"
 printAlg _ _ = "TODO: printAlg"
+
+printFun :: Integer -> a :-> b -> String
+printFun l (Fun ff) = printAlg l ff
 
 fun :: (CVal a, CVal b) => (Alg a -> Alg b) -> a :-> b
 fun f = Fun $ Abs f
