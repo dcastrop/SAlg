@@ -423,21 +423,29 @@ encName :: a :-> b -> String
 encName (Fun x) = encAlg x
 
 -- Only returns sensible names if
-encAlg :: Alg (a -> b) -> String
+encAlg :: Alg a -> String
 encAlg (Prim f _) = f
---encAlg (Ap f _) = encName f
-encAlg (Abs _) = "fun"
---encAlg BinOp{} = "bin"
---encAlg UnOp{} = "un"
---encAlg CmpOp{} = "cmp"
---encAlg (Fst _) = "proj_1"
---encAlg (Snd _) = "proj_2"
+encAlg (Ap f x) = encName f ++ encAlg x
+encAlg (Abs v) = encAlg $ v $ BVar 0
+encAlg BinOp{} = "bin"
+encAlg UnOp{} = "un"
+encAlg CmpOp{} = "cmp"
+encAlg (Fst _) = "proj_1"
+encAlg (Snd _) = "proj_2"
 encAlg (BVar _) = "var"
 encAlg (CVal _) = "evar"
---encAlg BIf{} = "if"
---encAlg (Lit _) = ""
---encAlg (Case _ f g) = "case_" ++ encName f ++ "_" ++ encName g
---encAlg (Proj _ _) = ""
+encAlg BIf{} = "bif"
+encAlg (Lit l) = "lit_" ++ show l
+encAlg (Case _ f g) = "case_" ++ encName f ++ "_" ++ encName g
+encAlg (Proj _ _) = "prj"
+encAlg (Pair _ _) = "mkpair"
+encAlg (Inl _) = "mkeither"
+encAlg (Inr _) = "mkeither"
+encAlg (Vec _ _) = "mkvec"
+encAlg (VLit _) = "mkvec"
+encAlg (VLen _) = "get_size"
+encAlg (VTake i _) = "take_" ++ encAlg i
+encAlg (VDrop i _) = "drop_" ++ encAlg i
 encAlg Bot = "error"
 encAlg (Fix f) = "fix_" ++ encName (f (Fun $ BVar 0))
 
@@ -500,6 +508,13 @@ instance CArrVec (:->) where
 
 instance CArrFix (:->) where
   fix f = Fun $ Fix f
+  kfix n f
+    | n <= 0 = fix f
+    | otherwise = f (kfix (n-1) f)
+
+instance CArrPar (:->) (:->) where
+  newProc f = f
+  f `runAt` _ = f
 
 class CVar v where
   var :: v a
@@ -645,7 +660,7 @@ compileAlg (VDrop i x) rv = do
     size = cMember rv sizeFld
     elems = cMember rv elemsFld
     cPlus v = CBinary CAddOp elems v undefNode
-    cMinus v = CBinary CAddOp size v undefNode
+    cMinus v = CBinary CSubOp size v undefNode
 compileAlg Bot{} _ = pure errorAndExit
 --compileAlg Fix{} _ = error "Panic! A recursive function cannot be a CVal!"
 
@@ -661,7 +676,12 @@ compileFun :: (CVal a, CVal b)
            -> CExpr
            -> CGen [CBlockItem]
 compileFun (Abs f) x y = compileAlg (f $ CVal x) y
-compileFun (Prim f _) x y = pure $ cret y fx
+compileFun e@(Prim f _) x y = do
+  whenM (not <$> isDeclared (internalIdent f)) $ do
+    dt <- cTySpec $ domTy $ Fun e
+    ct <- cTySpec $ codTy $ Fun e
+    newHeaderFun (internalIdent f) ct [dt]
+  pure $ cret y fx
   where
     fx = CCall (cVar $ internalIdent f) [x] undefNode
 compileFun (BVar _) _  _ = error "Panic! Open term"
