@@ -83,6 +83,9 @@ class CArr a => CArrChoice a where
       untag (Left x) = x
       untag (Right y) = y
 
+  distrL :: (CVal b, CVal c, CVal d)
+         => a (Either b c, d) (Either (b, d) (c,d))
+
 class CArrChoice t => CArrIf t where
   ifThenElse :: (CVal a, CVal b) => t a Bool -> t a b -> t a b -> t a b
 

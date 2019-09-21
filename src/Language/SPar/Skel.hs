@@ -328,6 +328,25 @@ instance CArrChoice (:=>) where
   inr = inrSkel
   f +++ g = (inl . f) ||| (inr . g)
   f ||| g = caseSkel f g
+  distrL = skelDistL
+
+-- TODO: check if correct!
+skelDistL :: forall a b c. (CVal a, CVal b, CVal c)
+         => (Either a b, c) :=> Either (a, c) (b, c)
+skelDistL = SSkel $ \i ->
+  case i of
+    DVal p _ -> pproc (DVal p getCTy) $ singleton i p $ \v -> run distrL v
+    DAlt p l r -> do
+      (el, er) <- parState (unSkel skelDistL l) (unSkel skelDistL r)
+      pure $ choice p l r el er
+    DPair (DTagL l _) r -> pproc (DTagL (DPair l r) getCTy) $ emptyEnv
+    DPair (DTagR _ l) r -> pproc (DTagR getCTy (DPair l r)) $ emptyEnv
+    DPair (DAlt p l r) s -> do
+      (el, er) <- parState (unSkel skelDistL (DPair l s)) (unSkel skelDistL (DPair r s))
+      pure $ choice p l r el er
+    DPair (DVal p (CEither tl tr)) r -> do
+      let j = DPair (DAlt p (DTagL (DVal p tl) getCTy) (DTagR getCTy (DVal p tr))) r
+      unSkel skelDistL j
 
 sif :: CVal a => (Bool, a) :=> Either a a
 sif = lift mif
