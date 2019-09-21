@@ -468,6 +468,8 @@ instance CArrChoice (:->) where
   right f = fun (\v -> acase v inl (inr . f))
   f +++ g = fun (\v -> acase v (inl . f) (inr . g))
   f ||| g = fun (\v -> acase v f g)
+  distrL = fun (\v -> acase (afst v) (inl . (id &&& (const (asnd v))))
+                 (inr . (id &&& (const (asnd v)))))
 
 instance CArrIf (:->) where
   ifThenElse test l r = test &&& id >>> mif >>> l ||| r
