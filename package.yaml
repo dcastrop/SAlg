@@ -45,7 +45,7 @@ library:
   - Language.SPar.Compiler
 
 executables:
-  sparc:
+  session-arrc:
     main:                Main.hs
     source-dirs:         app
     ghc-options:

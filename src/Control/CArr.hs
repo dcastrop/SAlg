@@ -93,24 +93,24 @@ class ((forall a. CVal a => Num (t a Int)), CArr t) =>
   vec :: (CVal a, CVal b) => t (Int, a) b -> t (Int, a) [b]
   vsize :: CVal a => t [a] Int
 
-  vtake :: CVal a => t [a] Int -> t [a] [a]
-  vtake f = f &&& id >>> vec proj
-  vdrop :: CVal a => t [a] Int -> t [a] [a]
-  vdrop f = f &&& id >>> vec (((fst + (snd >>> vsize)) &&& snd) >>> proj)
+  vtake :: CVal a => t (Int, [a]) [a]
+  vtake = vec proj
+  vdrop :: CVal a => t (Int, [a]) [a]
+  vdrop = vec (((fst + (snd >>> vsize)) &&& snd) >>> proj)
 
 class CArr t => CArrFix t where
   fix :: (CVal a, CVal b) => (forall f. CAlg f => f a b -> f a b) -> t a b
   kfix :: (CVal a, CVal b) => Int -> (forall f. CAlg f => f a b -> f a b) -> t a b
 
 class CArrCmp t where
-  (.<) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
-  (.<=) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
-  (.>) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
-  (.>=) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
-  (.==) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
+  (<)  :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
+  (<=) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
+  (>)  :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
+  (>=) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
+  (==) :: (Num b, CVal a, CVal b) => t a b -> t a b -> t a Bool
 
-class (forall a b. (Num b, CVal a, CVal b) => Fractional (t [a] b)) => CArrFrac t where
-instance (forall a b. (Num b, CVal a, CVal b) => Fractional (t [a] b)) => CArrFrac t where
+class (forall a b. (Num b, CVal a, CVal b) => Fractional (t a b)) => CArrFrac t where
+instance (forall a b. (Num b, CVal a, CVal b) => Fractional (t a b)) => CArrFrac t where
 
 type PID = Integer
 

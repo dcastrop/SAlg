@@ -82,7 +82,7 @@ data SPar v t a where
        -> SPar v t a
 
 isVar :: Alg t -> Integer -> Bool
-isVar (BVar i) j | i == j = True
+isVar (BVar i) j | i Prelude.== j = True
 isVar _ _ = False
 
 isCase :: CPar a -> Bool
@@ -273,11 +273,11 @@ projTy (DPair l r) p = pairATy (projTy l p) (projTy r p)
 projTy (DTagL i _) p = projTy i p
 projTy (DTagR _ i) p = projTy i p
 projTy (DVal pt t) p
-  | p == pt = ATy t
+  | p Prelude.== pt = ATy t
   | otherwise = ATy CUnit
 projTy i@(DAlt _ l r) p
   | p `Set.member` participants i = eitherATy tl tr
-  | otherwise = if tl == tr then tl else error "Error: ill-formed interface"
+  | otherwise = if tl Prelude.== tr then tl else error "Error: ill-formed interface"
   where
     tl = projTy l p
     tr = projTy r p
@@ -353,7 +353,7 @@ simpl m@MRet{} = m
 
 declareParFun :: (CVal a, CVal b) => String -> PID -> (Alg a -> CPar b) -> CGen ASt ()
 declareParFun pn p f
-  | eraseTy (domTy f) == ECUnit = do
+  | eraseTy (domTy f) Prelude.== ECUnit = do
       cv <- freshVar
       ctys <- cTySpec cty
       dcv <- cv <:: cty
@@ -386,6 +386,7 @@ codeGen self = cgen
     cgen (MSnd e  p  k) rv = do
       v1 <- freshVar
       dv1 <- v1 <:: e
+      warn $ "Compiling: " ++ printAlg 0 e
       s1 <- compileAlg e $ cVar v1
       s2 <- csend self p (getTy e) $ cVar v1
       s3 <- cgen k rv
@@ -399,6 +400,8 @@ codeGen self = cgen
     cgen (MRun f e fk) rv = do
       v <- freshVar
       dv <- v <:: (Ap f e)
+
+      warn $ "Compiling: " ++ printAlg 0 (ap f e)
       s1 <- compileAlg (ap f e) $ cVar v
       s2 <- cgen (fk $ CVal $ cVar v) rv
       pure $ dv ++ s1 ++ s2
@@ -416,7 +419,7 @@ codeGen self = cgen
       sk <- cgen (fk $ CVal $ cVar vk) rv
       pure $ dvl ++ dvr ++ dvk ++ cs vl vr sl sr : sk
         where
-          b = getTy e == ECEither ECUnit ECUnit
+          b = getTy e Prelude.== ECEither ECUnit ECUnit
           mMember ce f
             | b = ce
             | otherwise = cMember ce f
@@ -443,13 +446,15 @@ codeGen self = cgen
       dvl <- vl <:: domTy kl
       dvr <- vr <:: domTy kr
       dvk <- vk <:: domTy fk
+
+      warn $ "Compiling: " ++ printAlg 0 e
       s1 <- compileAlg e $ cVar v1
       sl <- cgen (kl $ CVal $ cVar vl) $ cVar vk
       sr <- cgen (kr $ CVal $ cVar vr) $ cVar vk
       sk <- cgen (fk $ CVal $ cVar vk) rv
       pure $ dv1 ++ dvl ++ dvr ++ dvk ++ s1 ++ cs v1 vl vr sl sr : sk
         where
-          b = getTy e == ECEither ECUnit ECUnit
+          b = getTy e Prelude.== ECEither ECUnit ECUnit
           mMember ce f
             | b = ce
             | otherwise = cMember ce f
@@ -466,6 +471,8 @@ codeGen self = cgen
     cgen (MIf e kl kr fk) rv = do
       (v1, dv1) <- declVar e
       (v2, dv2) <- declVar $ domTy fk
+
+      warn $ "Compiling: " ++ printAlg 0 e
       cb <- compileAlg e v1
       cx <- cgen kl v2
       cy <- cgen kr v2
@@ -475,7 +482,9 @@ codeGen self = cgen
                       (Just $ CCompound [] cy undefNode) undefNode) : ck
     cgen (MRet (CVal iv)) rv =
       pure [CBlockStmt  $ cExpr $ CAssign CAssignOp rv iv undefNode]
-    cgen (MRet v) rv = compileAlg v rv
+    cgen (MRet v) rv = do
+      warn $ "Compiling: " ++ printAlg 0 v
+      compileAlg v rv
 
 domTy :: CVal a => (Alg a -> CPar c) -> CTy a
 domTy _ = getCTy
