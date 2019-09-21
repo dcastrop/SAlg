@@ -316,7 +316,7 @@ ordFun :: Integer -> a :-> b -> c :-> d -> Ordering
 ordFun l (Fun a) (Fun b) = ordAlg l a b
 
 eqAlg :: Integer -> Alg a -> Alg b -> Bool
-eqAlg l a b = ordAlg l a b == EQ
+eqAlg l a b = ordAlg l a b Prelude.== EQ
 
 eqFun :: Integer -> a :-> b -> c :-> d -> Bool
 eqFun l (Fun a) (Fun b) = eqAlg l a b
@@ -326,8 +326,8 @@ printAlg _ (Lit x) = show x
 printAlg _ (Prim s _) = s
 printAlg _ (BVar i) = "?" ++ show i
 printAlg _ (CVal i) = show i
-printAlg l (BIf b x y) = "if (" ++ printAlg l b ++ ") then ("
-                         ++ printAlg l x ++ ") else (" ++ printAlg l y ++ ")"
+printAlg l (BIf b x y) = "if (" ++ printAlg l b ++ ")\n  then ("
+                         ++ printAlg l x ++ ")\n  else (" ++ printAlg l y ++ ")"
 printAlg l (Ap (Fun f) x) = printAlg l f ++ "(" ++ printAlg l x ++ ")"
 printAlg l (Abs f) = "(fun->" ++ printAlg (l+1) (f (BVar l)) ++ ")"
 printAlg l (Fst x) = "fst (" ++ printAlg l x ++")"
@@ -335,8 +335,8 @@ printAlg l (Snd x) = "snd (" ++ printAlg l x ++")"
 printAlg l (Pair x y) = "(" ++ printAlg l x ++"," ++ printAlg l y ++ ")"
 printAlg l (Inl x) = "inl (" ++ printAlg l x ++")"
 printAlg l (Inr x) = "inr (" ++ printAlg l x ++")"
-printAlg l (Case v x y) = "case (" ++ printAlg l v ++")" ++
-                          " (" ++ printAlg (l+1) (ap x (BVar l)) ++ ")" ++
+printAlg l (Case v x y) = "case (" ++ printAlg l v ++")\n  " ++
+                          " (" ++ printAlg (l+1) (ap x (BVar l)) ++ ")\n  " ++
                           " (" ++ printAlg (l+1) (ap y (BVar l)) ++ ")"
 printAlg l (Vec f i) = "vec (?" ++ show l ++ "= 0 to " ++ printAlg l i ++")" ++
                        " {" ++ printAlg (l+1) (ap f (BVar l)) ++ "}"
@@ -349,9 +349,32 @@ printAlg l (VLen x) = "length (" ++ printAlg l x ++ ")"
 printAlg l (Proj i v) = "(" ++ printAlg l v ++ ")!" ++
                         "(" ++ printAlg l i ++ ")"
 printAlg _ Bot = "undef"
-printAlg l (Fix f) = "fix ?" ++ show l ++
-                     "{" ++ printFun (l+1) (f (Fun $ BVar l)) ++ "}"
-printAlg _ _ = "TODO: printAlg"
+printAlg l (Fix f) = "fix ?" ++ show l ++ "\n" ++
+                     "{" ++ printFun (l+1) (f (Fun $ BVar l)) ++ "\n}"
+printAlg l (UnOp o e) = printOp o
+  where
+    printOp Neg = "- (" ++ se ++ ")"
+    se = printAlg l e
+printAlg l (BinOp o e1 e2) = "(" ++ se1 ++ ") " ++ printOp o ++ " (" ++ se2 ++ ")"
+  where
+    printOp Plus =  "+"
+    printOp Minus =  "-"
+    printOp Mult =  "*"
+    printOp Div =  "/"
+    printOp Mod =  "%"
+    se1 = printAlg l e1
+    se2 = printAlg l e2
+printAlg l (CmpOp o e1 e2) = "(" ++ se1 ++ ") " ++ printOp o ++ " (" ++ se2 ++ ")"
+  where
+    printOp Le =  "<="
+    printOp Lt =  "<"
+    printOp Gt =  ">"
+    printOp Ge =  ">="
+    printOp Eq =  "=="
+    se1 = printAlg l e1
+    se2 = printAlg l e2
+printAlg l (VTake o e) = "take (" ++ printAlg l o ++ ") (" ++ printAlg l e ++ ")"
+printAlg l (VDrop o e) = "drop (" ++ printAlg l o ++ ") (" ++ printAlg l e ++ ")"
 
 printFun :: Integer -> a :-> b -> String
 printFun l (Fun ff) = printAlg l ff
@@ -373,7 +396,7 @@ asnd t = Snd t
 
 apair :: (CVal a, CVal b) => Alg a -> Alg b -> Alg (a, b)
 apair (Fst (BVar e1)) (Snd (BVar e2))
-  | e1 == e2 = BVar $ e1
+  | e1 Prelude.== e2 = BVar $ e1
 apair e1 e2 = Pair e1 e2
 
 acase :: (CVal a, CVal b, CVal c) => Alg (Either a b) -> a :-> c -> b :-> c -> Alg c
@@ -464,23 +487,23 @@ instance (CVal a, CVal b, Num b) => Fractional (a :-> b) where
   fromRational x = fromInteger (numerator x) / fromInteger (denominator x)
 
 instance CArrCmp (:->) where
-  f .< g = f &&& g >>> (fun $ \v -> afst v |< asnd v)
-  f .<= g = f &&& g >>> (fun $ \v -> afst v |<= asnd v)
-  f .>= g = f &&& g >>> (fun $ \v -> afst v |>= asnd v)
-  f .> g = f &&& g >>> (fun $ \v -> afst v |> asnd v)
-  f .== g = f &&& g >>> (fun $ \v -> afst v |== asnd v)
+  f < g = f &&& g >>> (fun $ \v -> afst v |< asnd v)
+  f <= g = f &&& g >>> (fun $ \v -> afst v |<= asnd v)
+  f >= g = f &&& g >>> (fun $ \v -> afst v |>= asnd v)
+  f > g = f &&& g >>> (fun $ \v -> afst v |> asnd v)
+  f == g = f &&& g >>> (fun $ \v -> afst v |== asnd v)
 
 instance CArrVec (:->) where
   proj = Fun $ Abs $ \v -> Proj (afst v) (asnd v)
   vec f = Fun $ Abs (\v -> Vec (fun $ \x -> ap f (apair x (asnd v))) (afst v))
   vsize = Fun $ Abs $ \v -> VLen v
-  vtake i = Fun $ Abs $ \v -> VTake (aap i v) v
-  vdrop i = Fun $ Abs $ \v -> VDrop (aap i v) v
+  vtake = Fun $ Abs $ \v -> VTake (afst v) (asnd v)
+  vdrop = Fun $ Abs $ \v -> VDrop (afst v) (asnd v)
 
 instance CArrFix (:->) where
   fix f = Fun $ Fix f
   kfix n f
-    | n <= 0 = fix f
+    | n Prelude.<= 0 = fix f
     | otherwise = f (kfix (n-1) f)
 
 instance CArrPar (:->) where
@@ -521,7 +544,7 @@ emptyASt = Map.empty
 
 compileAlg :: CVal a => Alg a -> CExpr -> CGen ASt [CBlockItem]
 compileAlg e rv
-  | getTy e == ECUnit = pure $ cret rv $ cVar cUnit
+  | getTy e Prelude.== ECUnit = pure $ cret rv $ cVar cUnit
 compileAlg (Lit l) rv = cret rv <$> cVal l
 compileAlg (Prim v _) rv = pure $ cret rv $ cVar $ internalIdent v
 compileAlg (BVar _) _ = error "Panic! Cannot find open term!"
@@ -581,7 +604,7 @@ compileAlg (Pair e1 e2) rv = do
   cs2 <- compileAlg e2 $ cMember rv sndFld
   pure $ cs1 ++ cs2
 compileAlg (Inl e1) rv
-  | getTy e1 == ECUnit =
+  | getTy e1 Prelude.== ECUnit =
     pure [CBlockStmt $ cExpr $ CAssign CAssignOp rv (cVar cTagl) undefNode]
 compileAlg (Inl e1) rv = do
   let c1 = CBlockStmt $ cExpr $ tL
@@ -590,7 +613,7 @@ compileAlg (Inl e1) rv = do
   where
     tL = CAssign CAssignOp (cMember rv tagFld) (cVar cTagl) undefNode
 compileAlg (Inr e1) rv
-  | getTy e1 == ECUnit =
+  | getTy e1 Prelude.== ECUnit =
     pure [CBlockStmt $ cExpr $ CAssign CAssignOp rv (cVar cTagr) undefNode]
 compileAlg (Inr e1) rv = do
   let c1 = CBlockStmt $ cExpr $ tR
@@ -599,7 +622,7 @@ compileAlg (Inr e1) rv = do
   where
     tR = CAssign CAssignOp (cMember rv tagFld) (cVar cTagr) undefNode
 compileAlg (Case e l r) rv
-  | getTy e == ECEither ECUnit ECUnit = do
+  | getTy e Prelude.== ECEither ECUnit ECUnit = do
   (v, dv) <- declVar e
   s1 <- compileAlg e v
   sl <- compileFun (unFun l) (cVar cUnit) rv
@@ -698,7 +721,7 @@ compileFun e@(Fix f) x y = do
 
 declareFun :: (CVal a, CVal b) => String -> a :-> b -> CGen ASt ()
 declareFun fm f@(Fun (Prim fn _))
-  | fm == fn = whenM (not <$> isDeclared ifn) $ do
+  | fm Prelude.== fn = whenM (not <$> isDeclared ifn) $ do
       let ycty = codTy f
           xcty = domTy f
       xty <- cTySpec xcty
