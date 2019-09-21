@@ -232,7 +232,7 @@ msg int@(DAlt pc li ri) p
     ps = participants int
     env = caseEnv (Set.insert p ps) (msg li p) (msg ri p)
 msg (DVal pt t) p
-  | p == pt = Env $ Map.singleton p $ aPar t $ \v -> pure v
+  | p Prelude.== pt = Env $ Map.singleton p $ aPar t $ \v -> pure v
   | otherwise = env
   where
     env = Env $ Map.fromList [(pt, snd), (p, rcv)]

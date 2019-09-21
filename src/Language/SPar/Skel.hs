@@ -352,24 +352,24 @@ instance (CVal a, CVal b, Num b) => Fractional (a :=> b) where
   fromRational x = fromInteger (numerator x) / fromInteger (denominator x)
 
 instance CArrCmp (:=>) where
-  f .< g = f &&& g >>>  (lift $ fst .<  snd)
-  f .<= g = f &&& g >>> (lift $ fst .<= snd)
-  f .>= g = f &&& g >>> (lift $ fst .>= snd)
-  f .> g = f &&& g >>>  (lift $ fst .>  snd)
-  f .== g = f &&& g >>> (lift $ fst .== snd)
+  f < g = f &&& g >>>  (lift $ fst X.<  snd)
+  f <= g = f &&& g >>> (lift $ fst X.<= snd)
+  f >= g = f &&& g >>> (lift $ fst X.>= snd)
+  f > g = f &&& g >>>  (lift $ fst X.>  snd)
+  f == g = f &&& g >>> (lift $ fst X.== snd)
 
 -- FIXME: sequential so far
 instance CArrVec (:=>) where
   proj = sfun $ \v -> Proj (afst v) (asnd v)
   vsize = sfun $ \v -> VLen v
   vec _f = undefined
-  vtake f = f &&& id >>> sfun (\v -> VTake (afst v) (asnd v))
-  vdrop f = f &&& id >>> sfun (\v -> VDrop (afst v) (asnd v))
+  vtake = sfun (\v -> VTake (afst v) (asnd v))
+  vdrop = sfun (\v -> VDrop (afst v) (asnd v))
 
 instance CArrFix (:=>) where
   fix f = lift $ fix f
   kfix k f
-    | k <= 0 = lift (Fun $ Fix f)
+    | k Prelude.<= 0 = lift (Fun $ Fix f)
   kfix k f = f (kfix (k-1) f)
 
 instance CArrPar (:=>) where

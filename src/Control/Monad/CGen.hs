@@ -203,7 +203,7 @@ vecTySpec nm (tl, ql) =
   ]
   where
     p1 = fld elemsFld tl ql
-    p2 = fld sizeFld [CTypeSpec $ CIntType undefNode] []
+    p2 = fld sizeFld [CTypeSpec $ CTypeDef (internalIdent "size_t") undefNode] []
 
 elemsFld :: Ident
 elemsFld = internalIdent "elems"

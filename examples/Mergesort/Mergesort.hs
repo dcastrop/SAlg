@@ -2,7 +2,6 @@
 {-# LANGUAGE RebindableSyntax #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 module Mergesort where
 
 import Language.SPar.Skel
@@ -10,18 +9,20 @@ import Language.SPar.Skel
 type T a = Either a (a, a)
 
 msort :: CAlg f => f [Int] [Int] -> f [Int] [Int]
-msort ms =
-  if vsize .<= 1
-  then id
-  else (vtake (vsize / 2) >>> ms) &&&
-       (vdrop (vsize / 2) >>> ms)
-       >>> prim "merge"
+msort ms = (vsize &&& id) >>>
+  if fst <= 1
+  then snd
+  else (fst &&& ((fst / 2) &&& snd))
+        >>> second ((vtake >>> ms) &&& (vdrop >>> ms))
+        >>> doMerge
+  where
+    doMerge = prim "merge"
 
 seqMsort :: [Int] :-> [Int]
 seqMsort = fix msort
 
 parMsort :: [Int] :=> [Int]
-parMsort = annotate strat $ kfix 2 msort
+parMsort = annotate strat $ kfix 0 msort
 
 strat :: AnnStrat
 strat = ann seqMsort
