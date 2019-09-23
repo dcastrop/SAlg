@@ -42,19 +42,6 @@ msort = fix 2 $ \ms x ->
     alet (ms $ vdrop sz2 x) $ \xr ->
     prim "merge" $ pair (sz, pair (xl, xr))
 
-----msort :: CAlg f => f [Int] [Int] -> f [Int] [Int]
-----msort ms = (vsize &&& id) >>>
-----  if fst <= 1
-----  then snd
-----  else (fst &&& ((fst / 2) &&& snd))
-----        >>> second ((vtake >>> ms) &&& (vdrop >>> ms))
-----        >>> doMerge
-----  where
-----    doMerge = prim "merge"
---
---seqMsort :: [Int] :-> [Int]
---seqMsort = fix msort
-
 parMsort :: [Int] :=> [Int]
 parMsort = annotate strat $ msort
 
