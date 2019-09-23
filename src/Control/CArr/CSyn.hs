@@ -1,24 +1,31 @@
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE MonoLocalBinds #-}
-{-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE UndecidableInstances #-}
+{- LANGUAGE StandaloneDeriving #-}
+{- LANGUAGE NoImplicitPrelude #-}
+{- LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE IncoherentInstances #-}
-
+{-# LANGUAGE TypeFamilies #-}
+{- LANGUAGE GeneralizedNewtypeDeriving #-}
 module Control.CArr.CSyn
-  ( Var
+  (
+    Var
   , (:<:)(..)
+  , (X..)
   , alet
   , (.$)
-  , var
-  , Fun
+  , fix
+--  , Fun
+  , prim
   , cfun
-  , (.@)
+  , app
   , pair
   , fst
   , snd
@@ -35,6 +42,7 @@ module Control.CArr.CSyn
   , Prelude.Num(..)
   , Prelude.Fractional(..)
   , CAlg
+  , X.CArrFix
   , Either
   , Int
 ) where
@@ -46,40 +54,70 @@ import qualified Control.CCat as X
 import qualified Control.CArr as X
 import Control.CArr ( CAlg )
 
-newtype Var ctx a = Var { unVar :: forall t. CAlg t => t ctx a }
-
-class (CVal ctx, CVal ctx') => ctx :<: ctx' | ctx' -> ctx where
+class (CVal ctx, CVal ctx') => ctx :<: ctx' where
   sub :: CAlg t => t ctx' ctx
 
-instance CVal ctx => ctx :<: ctx where
-  sub = X.id
+--instance {-# OVERLAPPING #-}
+--  (CVal ctx) => ctx :<: ctx where
+--  sub = X.id
+--
+--instance
+--  (CVal a, ctx :<: ctx') => ctx :<: (a, ctx') where
+--  sub = X.snd X.>>> sub
 
-instance (CVal a, ctx :<: ctx') => ctx :<: (a, ctx') where
-  sub = X.snd X.>>> sub
+type family (:==:) a b where
+  a :==: a = 'Prelude.True
+  _ :==: _ = 'Prelude.False
 
-instance
-  (CVal ctx, CVal ctx'', ctx :<: ctx', ctx' :<: ctx'') =>
-  ctx :<: ctx'' where
-  sub = sub X.>>> sub @ctx @ctx'
+class (CVal ctx, CVal ctx', ctx :==: ctx' ~ flag) => Sub flag ctx ctx' where
+  subCtx :: CAlg t => t ctx' ctx
 
-var :: (CAlg t, CVal a, ctx :<: ctx') => Var ctx a -> t ctx' a
-var v = sub X.>>> unVar v
+instance CVal ctx => Sub 'Prelude.True ctx ctx where
+  subCtx = X.id
 
-type Fun t ctx a b = forall ctx'. ctx :<: ctx' => Var ctx' a -> t ctx' b
+instance (CVal a, Sub b ctx1 ctx2, (ctx1 :==: (a, ctx2)) ~ 'Prelude.False) =>
+  Sub 'Prelude.False ctx1 (a, ctx2) where
+  subCtx = X.snd X.>>> subCtx
 
-cfun :: (CAlg t, CVal a, CVal b) => Fun t a a b -> t a b
-cfun f = f (Var X.id)
+instance (CVal ctx, CVal ctx', Sub b ctx ctx') => ctx :<: ctx' where
+  sub = subCtx
 
-alet :: (CAlg t, CVal ctx, CVal a, CVal b)
-     => t ctx a -> Fun t ctx a b -> t ctx b
-alet x f = x X.&&& X.id X.>>> f (Var X.fst)
+--instance
+--  (CVal ctx, CVal ctx'', ctx :<: ctx', ctx' :<: ctx'') =>
+--  ctx :<: ctx'' where
+--  sub = sub X.>>> sub @ctx @ctx'
+
+--newtype Var ctx a = Var { unVar :: forall t. CAlg t => t ctx a }
+--
+--var :: (CAlg t, CVal a, ctx :<: ctx') => Var ctx a -> t ctx' a
+--var v = sub X.>>> unVar v
+
+type Var t ctx a = forall ctx'. (CVal ctx', ctx :<: ctx') => t ctx' a
+
+-- type Fun t ctx a b = Var t ctx a -> t ctx b
+
+fix :: (CAlg t, X.CArrFix t, CVal a, CVal b)
+    => Int
+    -> (forall f. CAlg f => (forall ctx. CVal ctx => f ctx a -> f ctx b) -> Var f a a -> f a b)
+    -> t a b
+fix k f = X.kfix k Prelude.$ \rf -> f (app rf) sub
+
+cfun :: (CAlg t, CVal a, CVal b) => (Var t a a -> t a b) -> t a b
+cfun f = f sub
+
+app :: (CVal a, CVal b, CVal ctx, CAlg t) => t a b -> t ctx a -> t ctx b
+app f x =  f X.. x
+
+prim :: (CAlg t, CVal a, CVal b, CVal ctx) => String -> t ctx a -> t ctx b
+prim s x = X.arr s Prelude.undefined X.. x
+
+alet :: forall t ctx a b. (CAlg t, CVal ctx, CVal a, CVal b)
+     => t ctx a -> (Var t (a, ctx) a -> t (a, ctx) b) -> t ctx b
+alet x f = x X.&&& X.id X.>>> f (sub X.>>> (X.fst :: t (a, ctx) a))
 
 (.$) :: (CAlg t, CVal ctx, CVal a, CVal b)
-     => Fun t ctx a b -> t ctx a -> t ctx b
+     => (Var t (a, ctx) a -> t (a, ctx) b) -> t ctx a -> t ctx b
 f .$ x = alet x f
-
-(.@) :: (CAlg t, CVal a, CVal b) => t a b -> forall ctx. CVal ctx => t ctx a -> t ctx b
-f .@ x = x X.>>> f
 
 pair :: (CAlg t, CVal ctx, CVal a, CVal b)
      => (t ctx a, t ctx b) -> t ctx (a, b)
@@ -97,9 +135,14 @@ docase :: (CAlg t, CVal ctx, CVal a, CVal b)
        => t ctx (Either a b) -> t ctx (Either (a, ctx) (b, ctx))
 docase f = f X.&&& X.id X.>>> X.distrL
 
-acase :: (CAlg t, CVal ctx, CVal a, CVal b, CVal c)
-      => t ctx (Either a b) -> Fun t ctx a c -> Fun t ctx b c -> t ctx c
-acase x l r = docase x X.>>> l (Var X.fst) X.||| r (Var X.fst)
+acase :: forall t ctx a b c. (CAlg t, CVal ctx, CVal a, CVal b, CVal c)
+      => t ctx (Either a b)
+      -> (Var t (a, ctx) a -> t (a, ctx) c)
+      -> (Var t (b, ctx) b -> t (b, ctx) c)
+      -> t ctx c
+acase x l r = docase x X.>>>
+  l (sub X.>>> (X.fst :: t (a, ctx) a)) X.|||
+  r (sub X.>>> (X.fst :: t (b, ctx) b))
 
 inl :: (CAlg t, CVal ctx, CVal a, CVal b) => t ctx a -> t ctx (Either a b)
 inl x = x X.>>> X.inl

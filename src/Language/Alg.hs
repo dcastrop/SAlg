@@ -25,7 +25,6 @@ module Language.Alg
   , CArrCmp(..)
   , prim
   , pmap
-  , const
   , encName
   , tinl
   , tinr
@@ -61,6 +60,10 @@ import Control.CCat
 import Control.CArr
 import Control.Monad.CGen
 import Control.Monad.Extra ( whenM )
+
+import Debug.Trace
+debug :: String -> CGen st ()
+debug s = trace s $ pure ()
 
 data T = K | I | P T T | S T T
 
@@ -442,8 +445,8 @@ encAlg (VDrop i _) = "drop_" ++ encAlg i
 encAlg Bot = "error"
 encAlg (Fix f) = "fix_" ++ encName (f (Fun $ BVar 0))
 
-const :: (CVal a, CVal b) => Alg b -> a :-> b
-const e = Fun $ Abs $ \_ -> e
+instance CArrCnst (:->) Alg where
+  const e = Fun $ Abs $ \_ -> e
 
 instance CCat (:->) where
   id = Fun $ Abs (\v -> v)
@@ -454,6 +457,7 @@ prim n = arr n undefined
 
 instance CArr (:->) where
   arr n v = Fun $ Prim n v
+  lit l = const $ Lit l
   fst = Fun $ Abs (\v -> afst v)
   snd = Fun $ Abs (\v -> asnd v)
   first f = Fun $ Abs (\v -> apair (ap f (afst v)) (asnd v))
@@ -504,21 +508,16 @@ instance CArrVec (:->) where
 
 instance CArrFix (:->) where
   fix f = Fun $ Fix f
-  kfix n f
-    | n Prelude.<= 0 = fix f
-    | otherwise = f (kfix (n-1) f)
+  kfix _n f = fix f
+    --  n Prelude.<= 0 = fix f
+    --  otherwise = f (kfix (n-1) f)
 
 instance CArrPar (:->) where
-  newProc f = f
-  f `runAt` _ = f
+  newProc = id
+  runAt _ = id
 
-class CVar v where
-  var :: v a
 instance CVar Alg where
   var = BVar 0
-
-class (CVar v, CArr f) => CAp f v where
-  ap  :: (CVal a, CVal b) => f a b -> v a -> v b
 
 instance CAp (:->) Alg where
   ap = aap
@@ -724,6 +723,7 @@ compileFun e@(Fix f) x y = do
 declareFun :: (CVal a, CVal b) => String -> a :-> b -> CGen ASt ()
 declareFun fm f@(Fun (Prim fn _))
   | fm Prelude.== fn = whenM (not <$> isDeclared ifn) $ do
+      debug $ "declaring " ++ fm
       let ycty = codTy f
           xcty = domTy f
       xty <- cTySpec xcty
@@ -733,6 +733,7 @@ declareFun fm f@(Fun (Prim fn _))
   where
     ifn = internalIdent fn
 declareFun (internalIdent -> fn) (Fun (Fix f)) = whenM (not <$> isDeclared fn) $ do
+  debug $ "declaring " ++ identToString fn
   arg <- freshVar
   rv <- freshVar
   let ycty = codTy (f $ Fun Bot)
