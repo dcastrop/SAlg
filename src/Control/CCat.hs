@@ -4,7 +4,7 @@ module Control.CCat
   , (<<<)
   ) where
 
-import Prelude hiding ( (.) )
+import Prelude hiding ( (.), const )
 
 import Data.C
 

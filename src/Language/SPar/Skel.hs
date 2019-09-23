@@ -46,6 +46,10 @@ import Control.Monad.CGen
 import Language.SPar
 import Language.SPar.Skel.Internal
 
+--import Debug.Trace
+--debug :: String -> CGen a ()
+--debug s = trace s $ return ()
+
 newtype AnnStrat = AnnStrat { unAnnStrat :: [AAlg] }
 
 ann :: (CVal a, CVal b) => a :-> b -> AnnStrat
@@ -117,7 +121,7 @@ wrapParts fpn p = do
   fn <- freshN $ "fun_thread_" ++ show p
   vn <- freshN "arg"
   newFun (fn, ([CTypeSpec $ CVoidType undefNode], [CPtrDeclr [] undefNode]))
-    [(vn, ([CTypeSpec $ CVoidType undefNode], [CPtrDeclr [] undefNode]))]
+    [ (vn, ([CTypeSpec $ CVoidType undefNode], [CPtrDeclr [] undefNode])) ]
     [ CBlockStmt $ cExpr $
       CCall (cVar $ internalIdent $ fpn ++ "_part_" ++ show p) [] undefNode
     , CBlockStmt $ CReturn (Just $ cVar $ internalIdent "NULL") undefNode
@@ -234,6 +238,11 @@ lift f = SSkel $ \i -> do
   p <- annot (anyPID i) f
   pproc (DVal p getCTy) $ kleisliEnv (msg i p) (singleton i p $ \v -> run f v)
 
+constSkel :: (CVal a, CVal b) => a -> b :=> a
+constSkel v = SSkel $ \i -> do
+  let p = anyPID i
+  pproc (DVal p getCTy) $ singleton i p $ \_ -> pure (Lit v)
+
 fstSkel :: (CVal a, CVal b) => (a, b) :=> a
 fstSkel = SSkel $ \i -> pproc (ifst i) $ efst i (partsL i)
 
@@ -270,6 +279,7 @@ splitSkel f g = SSkel $ \i -> splitProc i <$> unSkel f i <*> unSkel g i
 
 instance CArr (:=>) where
   arr nm f = lift (arr nm f)
+  lit l = constSkel l
   fst = fstSkel
   snd = sndSkel
   f *** g = (f . fst) &&& (g . snd)
@@ -392,5 +402,5 @@ instance CArrFix (:=>) where
   kfix k f = f (kfix (k-1) f)
 
 instance CArrPar (:=>) where
-  newProc f = gatherNew >>> f
-  runAt f p = gather p >>> f
+  newProc = gatherNew
+  runAt p = gather p
