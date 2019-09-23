@@ -8,11 +8,15 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Control.CArr
   ( CArr (..)
+  , CVar (..)
+  , CAp (..)
+  , CArrCnst(..)
   , CArrChoice (..)
   , CArrIf (..)
   , CArrVec (..)
   , CArrCmp (..)
   , CArrFix (..)
+  , CArrFrac
   , CArrPar (..)
   , CAlg
   ) where
@@ -28,8 +32,19 @@ infixr 3 &&&
 infixr 2 +++
 infixr 2 |||
 
+class CVar v where
+  var :: v a
+
+class (CVar v, CArr f) => CAp f v where
+  ap  :: (CVal a, CVal b) => f a b -> v a -> v b
+
+class CAp t v => CArrCnst t v where
+  const :: (CVal a, CVal b) => v b -> t a b
+
 class CCat t => CArr t where
   arr :: (CVal a, CVal b) => String -> (a -> b) -> t a b
+
+  lit :: (CVal a, CVal b) => a -> t b a
 
   fst :: (CVal a, CVal b) => t (a, b) a
   fst = arr "fst" Prelude.fst
@@ -118,7 +133,7 @@ instance (forall a b. (Num b, CVal a, CVal b) => Fractional (t a b)) => CArrFrac
 type PID = Integer
 
 class CArr t => CArrPar t where
-  newProc :: (CVal a, CVal b) => t a b -> t a b
-  runAt :: (CVal a, CVal b) => t a b -> PID -> t a b
+  newProc :: CVal a => t a a
+  runAt :: CVal a => PID -> t a a
 
 type CAlg t = (CArrIf t, CArrVec t, CArrCmp t, CArrFrac t, CArrPar t)

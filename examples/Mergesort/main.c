@@ -79,9 +79,11 @@ int main(int argc, const char *argv[]) {
   }
 
   vec_int_t out = parMsort(in);
-  //for (int i = 0; i < out.size; i++) {
-  //  printf("%d ", out.elems[i]);
-  //}
-  //printf("\n");
+#ifdef DEBUG
+  for (int i = 0; i < out.size; i++) {
+    printf("%d ", out.elems[i]);
+  }
+  printf("\n");
+#endif
   free(in.elems);
 }
