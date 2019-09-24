@@ -354,137 +354,77 @@ simpl m@MRet{} = m
 declareParFun :: (CVal a, CVal b) => String -> PID -> (Alg a -> CPar b) -> CGen ASt ()
 declareParFun pn p f
   | eraseTy (domTy f) Prelude.== ECUnit = do
-      cv <- freshVar
       ctys <- cTySpec cty
-      dcv <- cv <:: cty
-      body <- codeGen p (f $ CVal $ cVar cUnit) $ cVar cv
+      (cv, body) <- codeGen p (f $ CVal $ cVar cUnit)
       newFun (fn, ctys) []
-        (dcv ++ body ++ [CBlockStmt $ CReturn (Just (cVar cv)) undefNode])
+        (body ++ [CBlockStmt $ CReturn (Just cv) undefNode])
 
   | otherwise = do
       dv <- freshVar
-      cv <- freshVar
       ctys <- cTySpec cty
       dtys <- cTySpec dty
-      dcv <- cv <:: cty
-      body <- codeGen p (f $ CVal $ cVar dv) $ cVar cv
+      (cv, body) <- codeGen p (f $ CVal $ cVar dv)
       newFun (fn, ctys) [(dv, dtys)]
-        (dcv ++ body ++ [CBlockStmt $ CReturn (Just (cVar cv)) undefNode])
+        (body ++ [CBlockStmt $ CReturn (Just cv) undefNode])
   where
     fn = internalIdent $ pn ++ "_part_" ++ show p
     dty = domTy f
     cty = codTy f
 
-codeGen :: CVal a => PID -> CPar a -> CExpr -> CGen ASt [CBlockItem]
+codeGen :: CVal a => PID -> CPar a -> CGen ASt (CExpr, [CBlockItem])
 codeGen self = cgen
   where
-    cgen :: forall a. CVal a => CPar a -> CExpr -> CGen ASt [CBlockItem]
-    cgen (MSnd e@(CVal iv)  p  k) rv = do
+    cgen :: forall a. CVal a => CPar a -> CGen ASt (CExpr, [CBlockItem])
+    cgen (MSnd e@(CVal iv)  p  k) = do
       s1 <- csend self p (getTy e) $ iv
-      s2 <- cgen k rv
-      pure $ s1 ++ s2
-    cgen (MSnd e  p  k) rv = do
-      v1 <- freshVar
-      dv1 <- v1 <:: e
-      warn $ "Compiling: " ++ printAlg 0 e
-      s1 <- compileAlg e $ cVar v1
-      s2 <- csend self p (getTy e) $ cVar v1
-      s3 <- cgen k rv
-      pure $ dv1 ++ s1 ++ s2 ++ s3
-    cgen (MRcv p ty fk) rv = do
+      (rv, s2) <- cgen k
+      pure (rv, s1 ++ s2)
+    cgen (MSnd e  p  k) = do
+      (v1, s1) <- compileAlg e
+      s2 <- csend self p (getTy e) v1
+      (rv, s3) <- cgen k
+      pure (rv, s1 ++ s2 ++ s3)
+    cgen (MRcv p ty fk) = do
       v1 <- freshVar
       dv1 <- v1 <:: ty
       s1 <- crecv self p (getTy ty) $ cVar v1
-      s2 <- cgen (fk $ CVal $ cVar v1) rv
-      pure $ dv1 ++ s1 ++ s2
-    cgen (MRun f e fk) rv = do
-      v <- freshVar
-      dv <- v <:: (Ap f e)
-
-      warn $ "Compiling: " ++ printAlg 0 (ap f e)
-      s1 <- compileAlg (ap f e) $ cVar v
-      s2 <- cgen (fk $ CVal $ cVar v) rv
-      pure $ dv ++ s1 ++ s2
-    cgen (MCse e@(CVal v1) kl kr fk) rv = do
-      vl <- freshVar
-      vr <- freshVar
+      (rv, s2) <- cgen (fk $ CVal $ cVar v1)
+      pure (rv, dv1 ++ s1 ++ s2)
+    cgen (MRun f e fk) = do
+      (v, s1) <- compileAlg (ap f e)
+      (rv, s2) <- cgen (fk $ CVal v)
+      pure (rv, s1 ++ s2)
+    cgen (MCse e kl kr fk) = do
       vk <- freshVar
-      dvl <- if b then pure []
-             else vl <:: domTy kl
-      dvr <- if b then pure []
-             else vr <:: domTy kr
       dvk <- vk <:: domTy fk
-      sl <- cgen (kl $ CVal $ cVar vl) $ cVar vk
-      sr <- cgen (kr $ CVal $ cVar vr) $ cVar vk
-      sk <- cgen (fk $ CVal $ cVar vk) rv
-      pure $ dvl ++ dvr ++ dvk ++ cs vl vr sl sr : sk
+      (ve, se) <- compileAlg e
+      (vkl, sl) <- cgen (kl $ CVal $ v1l ve)
+      (vkr, sr) <- cgen (kr $ CVal $ v1r ve)
+      (rv, sk) <- cgen (fk $ CVal $ cVar vk)
+      pure (rv, dvk ++ se ++
+             cs ve (sl ++ cret (cVar vk) vkl) (sr ++ cret (cVar vk) vkr) : sk)
         where
           b = getTy e Prelude.== ECEither ECUnit ECUnit
+          v1l v1 | b = cVar cUnit
+                 | otherwise = cMember (cMember v1 valFld) inlFld
+          v1r v1 | b = cVar cUnit
+                 | otherwise = cMember (cMember v1 valFld) inrFld
           mMember ce f
             | b = ce
             | otherwise = cMember ce f
-          cs vl vr sl sr = CBlockStmt $ cCase (mMember v1 tagFld) cL cR
-            where
-              cL
-                | b = sl
-                | otherwise = CBlockStmt (cExpr $ cAssign (cVar vl) untagL) : sl
-              cR
-                | b = sr
-                | otherwise = CBlockStmt (cExpr $ cAssign (cVar vr) untagR) : sr
-              untagL
-                | b = cVar cUnit
-                | otherwise = cMember (cMember v1 valFld) inlFld
-              untagR
-                | b = cVar cUnit
-                | otherwise = cMember (cMember v1 valFld) inrFld
-    cgen (MCse e kl kr fk) rv = do
-      v1 <- freshVar
-      vl <- freshVar
-      vr <- freshVar
-      vk <- freshVar
-      dv1 <- v1 <:: e
-      dvl <- vl <:: domTy kl
-      dvr <- vr <:: domTy kr
-      dvk <- vk <:: domTy fk
-
-      warn $ "Compiling: " ++ printAlg 0 e
-      s1 <- compileAlg e $ cVar v1
-      sl <- cgen (kl $ CVal $ cVar vl) $ cVar vk
-      sr <- cgen (kr $ CVal $ cVar vr) $ cVar vk
-      sk <- cgen (fk $ CVal $ cVar vk) rv
-      pure $ dv1 ++ dvl ++ dvr ++ dvk ++ s1 ++ cs v1 vl vr sl sr : sk
-        where
-          b = getTy e Prelude.== ECEither ECUnit ECUnit
-          mMember ce f
-            | b = ce
-            | otherwise = cMember ce f
-          cs v1 vl vr sl sr = CBlockStmt $ cCase (mMember (cVar v1) tagFld) cL cR
-            where
-              cL = CBlockStmt (cExpr $ cAssign (cVar vl) untagL) : sl
-              cR = CBlockStmt (cExpr $ cAssign (cVar vr) untagR) : sr
-              untagL
-                | b = cVar cUnit
-                | otherwise = cMember (cMember (cVar v1) valFld) inlFld
-              untagR
-                | b = cVar cUnit
-                | otherwise = cMember (cMember (cVar v1) valFld) inrFld
-    cgen (MIf e kl kr fk) rv = do
-      (v1, dv1) <- declVar e
-      (v2, dv2) <- declVar $ domTy fk
-
-      warn $ "Compiling: " ++ printAlg 0 e
-      cb <- compileAlg e v1
-      cx <- cgen kl v2
-      cy <- cgen kr v2
-      ck <- cgen (fk $ CVal v2) rv
-      pure $ dv1 ++ dv2 ++ cb ++
-        (CBlockStmt $ CIf v1 (CCompound [] cx undefNode)
-                      (Just $ CCompound [] cy undefNode) undefNode) : ck
-    cgen (MRet (CVal iv)) rv =
-      pure [CBlockStmt  $ cExpr $ CAssign CAssignOp rv iv undefNode]
-    cgen (MRet v) rv = do
-      warn $ "Compiling: " ++ printAlg 0 v
-      compileAlg v rv
+          cs v1 sl sr = CBlockStmt $ cCase (mMember v1 tagFld) sl sr
+    cgen (MIf e kl kr fk) = do
+      vv <- freshVar
+      dv <- vv <:: domTy fk
+      (v1, cb) <- compileAlg e
+      (vx, cx) <- cgen kl
+      (vy, cy) <- cgen kr
+      (rv, ck) <- cgen (fk $ CVal $ cVar vv)
+      pure (rv, dv ++ cb ++
+        (CBlockStmt $ CIf v1 (CCompound [] (cx ++ cret (cVar vv) vx) undefNode)
+                      (Just $ CCompound [] (cy ++ cret (cVar vv) vy) undefNode)
+                      undefNode) : ck)
+    cgen (MRet e) = compileAlg e
 
 domTy :: CVal a => (Alg a -> CPar c) -> CTy a
 domTy _ = getCTy
