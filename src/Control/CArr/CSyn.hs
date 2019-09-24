@@ -15,11 +15,10 @@
 {-# LANGUAGE TypeFamilies #-}
 {- LANGUAGE GeneralizedNewtypeDeriving #-}
 module Control.CArr.CSyn
-  (
-    Var
+  ( Var
   , (:<:)(..)
   , (X..)
-  , alet
+  , vlet
   , (.$)
   , fix
 --  , Fun
@@ -30,6 +29,8 @@ module Control.CArr.CSyn
   , fst
   , snd
   , acase
+  , (.|)
+  , (.||)
   , inl
   , inr
   , ifThenElse
@@ -37,6 +38,8 @@ module Control.CArr.CSyn
   , vdrop
   , vtake
   , vsize
+  , par
+  , (@@)
   , (Prelude.$)
   , X.CArrCmp(..)
   , Prelude.Num(..)
@@ -94,11 +97,10 @@ instance (CVal ctx, CVal ctx', Sub b ctx ctx') => ctx :<: ctx' where
 
 type Var t ctx a = forall ctx'. (CVal ctx', ctx :<: ctx') => t ctx' a
 
--- type Fun t ctx a b = Var t ctx a -> t ctx b
-
 fix :: (CAlg t, X.CArrFix t, CVal a, CVal b)
     => Int
-    -> (forall f. CAlg f => (forall ctx. CVal ctx => f ctx a -> f ctx b) -> Var f a a -> f a b)
+    -> (forall f. CAlg f => (forall ctx. CVal ctx => f ctx a -> f ctx b) ->
+        Var f a a -> f a b)
     -> t a b
 fix k f = X.kfix k Prelude.$ \rf -> f (app rf) sub
 
@@ -111,13 +113,13 @@ app f x =  f X.. x
 prim :: (CAlg t, CVal a, CVal b, CVal ctx) => String -> t ctx a -> t ctx b
 prim s x = X.arr s Prelude.undefined X.. x
 
-alet :: forall t ctx a b. (CAlg t, CVal ctx, CVal a, CVal b)
+vlet :: forall t ctx a b. (CAlg t, CVal ctx, CVal a, CVal b)
      => t ctx a -> (Var t (a, ctx) a -> t (a, ctx) b) -> t ctx b
-alet x f = x X.&&& X.id X.>>> f (sub X.>>> (X.fst :: t (a, ctx) a))
+vlet x f = x X.&&& X.id X.>>> f (sub X.>>> (X.fst :: t (a, ctx) a))
 
 (.$) :: (CAlg t, CVal ctx, CVal a, CVal b)
      => (Var t (a, ctx) a -> t (a, ctx) b) -> t ctx a -> t ctx b
-f .$ x = alet x f
+f .$ x = vlet x f
 
 pair :: (CAlg t, CVal ctx, CVal a, CVal b)
      => (t ctx a, t ctx b) -> t ctx (a, b)
@@ -144,6 +146,20 @@ acase x l r = docase x X.>>>
   l (sub X.>>> (X.fst :: t (a, ctx) a)) X.|||
   r (sub X.>>> (X.fst :: t (b, ctx) b))
 
+(.|) :: ( (Var t (a, ctx) a -> t (a, ctx) c) ->
+          (Var t (b, ctx) b -> t (b, ctx) c) ->
+          t ctx c )
+     -> (Var t (a, ctx) a -> t (a, ctx) c)
+     -> (Var t (b, ctx) b -> t (b, ctx) c)
+     -> t ctx c
+cse .| f = cse f
+
+(.||) :: ( (Var t (b, ctx) b -> t (b, ctx) c) ->
+           t ctx c )
+     -> (Var t (b, ctx) b -> t (b, ctx) c)
+     -> t ctx c
+cse .|| f = cse f
+
 inl :: (CAlg t, CVal ctx, CVal a, CVal b) => t ctx a -> t ctx (Either a b)
 inl x = x X.>>> X.inl
 
@@ -165,3 +181,10 @@ vdrop i v = i X.&&& v X.>>> X.vdrop
 
 vsize :: (CAlg t, CVal ctx, CVal a) => t ctx [a] -> t ctx Int
 vsize v = v X.>>> X.vsize
+
+par :: (CAlg t, CVal ctx, CVal a) => (t ctx a -> t ctx b) -> t ctx a -> t ctx b
+par f x = f (x X.>>> X.newProc)
+
+(@@) :: (CAlg t, CVal ctx, CVal a) => (t ctx a -> t ctx b) -> Prelude.Integer
+     -> t ctx a -> t ctx b
+f @@ p = \x -> f (x X.>>> X.runAt p)

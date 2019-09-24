@@ -5,6 +5,7 @@ module Language.SPar.Compiler
 
 import Data.List ( intersperse, foldl' )
 import Language.Haskell.Interpreter
+import Language.Haskell.Interpreter.Unsafe
 import System.FilePath
 -- import System.Exit
 
@@ -24,6 +25,7 @@ compile fp _args = do
   where
     loadPar :: InterpreterT IO ()
     loadPar = do
+      unsafeSetGhcOption "-fconstraint-solver-iterations=0"
       loadModules [fp]
       setTopLevelModules [takeBaseName fp]
 
