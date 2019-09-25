@@ -5,6 +5,21 @@
 #include <time.h>
 #include <stdlib.h>
 
+#define REPETITIONS 20
+
+#define BENCHMARK(s, f) { \
+  time = 0; \
+  for(int i=0; i<REPETITIONS; i++){ \
+    in = randvec(size); \
+    clock_gettime(CLOCK_MONOTONIC, &start); \
+    out = f(in); \
+    clock_gettime(CLOCK_MONOTONIC, &end); \
+    time += (tspec2ms(&end) - tspec2ms(&start))/REPETITIONS; \
+    free(in.elems); \
+  } \
+  printf("%s: %d\n", s, time); \
+}
+
 vec_int_t merge(pair_int_pair_vec_int_vec_int_t in){
   vec_int_t out;
   int *tmp = (int *)malloc(in.fst * sizeof(int));
@@ -45,15 +60,26 @@ void usage(const char *nm){
   exit(-1);
 }
 
-void test(size_t sz){
-  printf("Testing...");
-  int tmp[sz];
-  printf("Done\n");
-  return;
+vec_int_t randvec(ssize_t s){
+  vec_int_t in;
+  in.elems = (int *)calloc(s, sizeof(int));
+  in.size = s;
+
+  srandom(time(NULL));
+
+  for (int i = 0; i < s; i++) {
+    in.elems[i] = (int)random() % s;
+  }
+
+  return in;
+}
+
+long tspec2ms(struct timespec *tv)
+{
+	return tv->tv_sec * 1.0e9 + tv->tv_nsec;
 }
 
 int main(int argc, const char *argv[]) {
-  vec_int_t in;
   if (argc <= 1) {
     usage(argv[0]);
   }
@@ -68,22 +94,45 @@ int main(int argc, const char *argv[]) {
     usage(argv[0]);
   }
 
-  //test(size);
-  in.elems = (int *)calloc(size, sizeof(int));
-  in.size = size;
-
-  srandom(time(NULL));
-
-  for (int i = 0; i < size; i++) {
-    in.elems[i] = (int)random() % size;
+  vec_int_t in, out;
+  struct timespec start, end;
+  long time = 0;
+  // Warmup
+  for(int i=0; i<REPETITIONS; i++){
+    in = randvec(size);
+    out = parMsort0(in);
+    free(in.elems);
   }
 
-  vec_int_t out = parMsort(in);
-#ifdef DEBUG
-  for (int i = 0; i < out.size; i++) {
-    printf("%d ", out.elems[i]);
-  }
-  printf("\n");
-#endif
-  free(in.elems);
+
+  BENCHMARK("ms0", parMsort0)
+  BENCHMARK("ms1", parMsort1)
+  //BENCHMARK("ms1a", parMsort1a)
+  BENCHMARK("ms2", parMsort2)
+  BENCHMARK("ms3", parMsort3)
+  BENCHMARK("ms4", parMsort4)
+  BENCHMARK("ms5", parMsort5)
+  BENCHMARK("ms6", parMsort6)
+  BENCHMARK("ms7", parMsort7)
+  BENCHMARK("ms8", parMsort8)
+
+  // time = 0;
+  // for(int i=0; i<REPETITIONS; i++){
+    // in = randvec(size);
+    // clock_gettime(CLOCK_MONOTONIC, &start);
+    // out = parMsort1(in);
+    // clock_gettime(CLOCK_MONOTONIC, &end);
+    // time += (tspec2ms(&end) - tspec2ms(&start))/REPETITIONS;
+    // free(in.elems);
+  // }
+  // printf("ms1: %d\n", time);
+
+//#ifdef DEBUG
+//    if (start.tv_nsec > end.tv_nsec ){
+//  for (int i = 0; i < out.size; i++) {
+//    printf("%d ", out.elems[i]);
+//  }
+//  printf("\n");
+//    }
+//#endif
 }
