@@ -203,7 +203,8 @@ vecTySpec nm (tl, ql) =
   ]
   where
     p1 = fld elemsFld tl ql
-    p2 = fld sizeFld [CTypeSpec $ CTypeDef (internalIdent "size_t") undefNode] []
+    p2 = fld sizeFld [ CTypeSpec $ CTypeDef (internalIdent "size_t") undefNode
+                     ] []
 
 elemsFld :: Ident
 elemsFld = internalIdent "elems"
@@ -452,7 +453,8 @@ chanTySpec nm (tl, ql) =
   ]
   where
     qFields =
-      [ fld qsizeFld [ CTypeSpec $ CUnsigType undefNode
+      [ fld qsizeFld [ CTypeQual $ CVolatQual undefNode
+                     , CTypeSpec $ CUnsigType undefNode
                      , CTypeSpec $ CIntType undefNode] []
       , fld qheadFld [ CTypeSpec $ CIntType undefNode] []
       , fld qtailFld [ CTypeSpec $ CIntType undefNode] []
