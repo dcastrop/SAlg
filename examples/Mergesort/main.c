@@ -2,22 +2,31 @@
 #include <inttypes.h>
 #include <errno.h>
 #include <string.h>
-#include <time.h>
+#include <sys/time.h>
 #include <stdlib.h>
+#include <math.h>
 
-#define REPETITIONS 20
+#define REPETITIONS 50
 
 #define BENCHMARK(s, f) { \
   time = 0; \
+  time_diff = 0; \
+  time_old = 0; \
+  var = 0; \
   for(int i=0; i<REPETITIONS; i++){ \
     in = randvec(size); \
     clock_gettime(CLOCK_MONOTONIC, &start); \
     out = f(in); \
     clock_gettime(CLOCK_MONOTONIC, &end); \
-    time += (tspec2ms(&end) - tspec2ms(&start))/REPETITIONS; \
+    time_diff = tspec2ms(&end) - tspec2ms(&start); \
+    time_old = time; \
+    time += (time_diff - time)/(i+1); \
+    var += (time_diff - time) * (time_diff - time_old); \
     free(in.elems); \
   } \
-  printf("%s: %d\n", s, time); \
+  printf("\tK: %s\n", s); \
+  printf("\t\tmean: %f\n", time); \
+  printf("\t\tstddev: %f\n", sqrt(var / (REPETITIONS - 1))); \
 }
 
 vec_int_t merge(pair_int_pair_vec_int_vec_int_t in){
@@ -96,7 +105,6 @@ int main(int argc, const char *argv[]) {
 
   vec_int_t in, out;
   struct timespec start, end;
-  long time = 0;
   // Warmup
   for(int i=0; i<REPETITIONS; i++){
     in = randvec(size);
@@ -104,7 +112,10 @@ int main(int argc, const char *argv[]) {
     free(in.elems);
   }
 
-
+  double time = 0;
+  double time_diff = 0;
+  double time_old = 0;
+  double var = 0;
   BENCHMARK("ms0", parMsort0)
   BENCHMARK("ms1", parMsort1)
   //BENCHMARK("ms1a", parMsort1a)
