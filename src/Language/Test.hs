@@ -134,7 +134,7 @@ type family Mul (n :: INat) (m :: INat) where
   Mul ('S n) m = Add m (Mul n m)
 
 mul :: SINat n -> SINat m -> SINat (Mul n m)
-mul SZ n = SZ
+mul SZ _ = SZ
 mul (SS n) m = addn m (mul n m)
 
 type family Pow2 (n :: INat) where
@@ -147,12 +147,12 @@ pow2 (SS n) = addn (pow2 n) (pow2 n)
 
 -- Hack: proper way would be to traverse 'n' and 'm', but it is quite inefficient
 
-szr :: SINat n -> Add n Z :~: n
+szr :: SINat n -> Add n 'Z :~: n
 szr SZ = Refl
 szr (SS n) = case szr n of
                Refl -> Refl
 
-ssr :: SINat n -> SINat m -> Add n (S m) :~: S (Add n m)
+ssr :: SINat n -> SINat m -> Add n ('S m) :~: 'S (Add n m)
 ssr SZ _ = Refl
 ssr (SS n) m = case ssr n m of
                  Refl -> Refl
@@ -184,7 +184,7 @@ fromTo :: forall a n. Num a => SINat n -> Prod n a
 fromTo = go 0
 
 go :: forall a n. Num a => a -> SINat n -> Prod n a
-go n SZ = unit
+go _ SZ = unit
 go n (SS m) = (n, go (1 + n) m)
 
 dft :: SINat n -> Prod (Pow2 n) (Complex Float) -> Prod (Pow2 n) (Complex Float)
@@ -197,7 +197,8 @@ dft (SS x)
      cat p2x
   where
     p2x = pow2 x
-    p2sx = fromIntegral $ 2 ^ fromINat (SS x)
+    p2sx :: Float
+    p2sx = fromIntegral $ ((2 ^ (fromINat (SS x) :: Integer)) :: Integer)
 
 --------------------------------------------------------------------------------
 -- FFT BELOW -------------------------------------------------------------------
@@ -205,6 +206,8 @@ dft (SS x)
 -- PRIM FUNCTIONS --------------------------------------------------------------
 
 -- baseFFT is one of your PRIM funcs: you can copy from some online FFT implementation: e.g. Rosetta Code
+
+baseFFT :: RealFloat a => [Complex a] -> [Complex a]
 baseFFT [] = []
 baseFFT [x] = [x]
 baseFFT xs = zipWith (+) ys ts ++ zipWith (-) ys ts
@@ -212,21 +215,27 @@ baseFFT xs = zipWith (+) ys ts ++ zipWith (-) ys ts
           ys = baseFFT evens
           zs = baseFFT odds
           (evens, odds) = splitList xs
-          ts = zipWith (\z k -> exp' k n * z) zs [0..]
+          ts = zipWith (\z k -> (exp' k n) * z) zs [0::Integer ..]
 
+exp' :: (Floating a1, Integral a2, Integral a3) => a2 -> a3 -> Complex a1
 exp' k n = cis $ -2 * pi * (fromIntegral k) / (fromIntegral n)
 
+splitList :: [a] -> ([a], [a])
 splitList [] = ([], [])
 splitList [x] = ([x], [])
 splitList (x:y:xs) = (x:xt, y:yt) where (xt, yt) = splitList xs
 
+addPadding :: Num a => SINat n -> [a] -> [a]
 addPadding sz l = l ++ replicate (padding $ length l) 0
   where
-    padding k = 2 ^ (max (fromINat sz) (ceiling (logBase 2 $ fromIntegral k))) - k
+    padding k = 2 ^ (max ((fromINat sz) :: Integer) (ceiling (logBase 2 $ fromIntegral k :: Double))) - k
 
+concatenate :: ([a], [a]) -> [a]
 concatenate = uncurry (++)
 
 {- Below should be your prim functions -}
+mulExp :: (RealFloat a1, Integral a3) =>
+                a3 -> Int -> [Complex a1] -> [Complex a1]
 mulExp p2sx i l = zipWith (\k z -> exp' k (p2sx * fromIntegral len) * z) [i * len ..] l
   where
     len = length l
@@ -254,7 +263,7 @@ merge (SS n) = merge n *** merge n >>> concatenate
 
 fmapTIx :: SINat n -> ((Int, [Complex Float]) -> [Complex Float]) -> Int -> Tree n [Complex Float] -> Tree n [Complex Float]
 fmapTIx SZ f k = (\v -> f (k, v))
-fmapTIx (SS x) f k = fmapTIx x f k *** fmapTIx x f (k + (2 ^ fromINat x))
+fmapTIx (SS x) f k = fmapTIx x f k *** fmapTIx x f (k + (2 ^ (fromINat x :: Integer)))
 
 swap :: ((a,b), (c, d)) -> ((a, c), (b, d))
 swap = ((fst >>> fst) &&& (snd >>> fst)) &&&
@@ -272,7 +281,8 @@ fft (SS x)
     id *** fmapTIx x (uncurry $ mulExp p2sx) 0 {- Multiply by exponential -} >>>
     zwT x addc {- Left side -} &&& zwT x subc {- right side -}
   where
-    p2sx = 2 ^ fromINat (SS x)
+    p2sx :: Integer
+    p2sx = 2 ^ (fromINat (SS x) :: Integer)
 
 fastFourierR :: forall (n :: INat). SINat n -> [Complex Float] -> [Complex Float]
 fastFourierR cores = addPadding cores >>> splitL cores >>> fft cores >>> merge cores
@@ -284,7 +294,9 @@ fastFourier :: forall n. (KnownNat n, IsSing (FromNat n))
             => [Complex Float] -> [Complex Float]
 fastFourier = fastFourierR (sing :: SINat (FromNat n))
 
+fft8core :: [Complex Float] -> [Complex Float]
 fft8core = fastFourier @3
+fft16core :: [Complex Float] -> [Complex Float]
 fft16core = fastFourier @4
 
 type family ToNat (i :: INat) :: Nat where
