@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -65,12 +66,12 @@ instance Monoid AnnStrat where
 inStrat :: (CVal a, CVal b) => a :-> b -> AnnStrat -> Bool
 inStrat f x = AAlg f `elem` unAnnStrat x
 
-data Defs = Defs { defm :: Map String AAlg }
+newtype Defs = Defs { defm :: (Map String AAlg) }
 
 emptyDefs :: Defs
 emptyDefs = Defs Map.empty
 
-data St = St { nextPID :: PID, defs :: Defs }
+data St = St { nextPID :: !PID, defs :: !Defs }
 
 emptySt :: St
 emptySt = St 1 emptyDefs
@@ -82,7 +83,7 @@ incPID st = st { nextPID = nextPID st + 1 }
 -- State monad: next PID
 type PM = RWS AnnStrat () St
 
-data SProc v t a = SProc { unProc :: Env v t, outR :: DType a }
+data SProc v t a = SProc { unProc :: !(Env v t), outR :: !(DType a) }
 
 type CProc a = SProc Alg (:->) a
 
@@ -102,15 +103,15 @@ compileAsLib :: (CVal a, CVal b) => String -> AnnStrat -> a :=> b -> CGen ASt ()
 compileAsLib fpn st f = do
   mapM_ (uncurry declF) df
   declareEnv fpn p
-  fns <- mapM (wrapParts fpn) pds
-  av <- freshVar
-  aty <- cTySpec $ domTy f
-  bty <- cTySpec $ codTy f
+  !fns <- mapM (wrapParts fpn) pds
+  !av <- freshVar
+  !aty <- cTySpec $ domTy f
+  !bty <- cTySpec $ codTy f
   newFun (internalIdent fpn, bty) [(av, aty)]
     $ body fpn av 0 $ zip pds fns
   newHeaderFun (internalIdent fpn) bty [aty]
   where
-    pds = filter (/= 0) $ domEnvL p
+    !pds = filter (/= 0) $ domEnvL p
     declF :: String -> AAlg -> CGen ASt ()
     declF fn (AAlg af) = declareFun fn af
     (SProc p _, St _ (Defs (Map.toList -> df)), ()) =
@@ -118,8 +119,8 @@ compileAsLib fpn st f = do
 
 wrapParts :: String -> PID -> CGen ASt Ident
 wrapParts fpn p = do
-  fn <- freshN $ "fun_thread_" ++ show p
-  vn <- freshN "arg"
+  !fn <- freshN $ "fun_thread_" ++ show p
+  !vn <- freshN "arg"
   newFun (fn, ([CTypeSpec $ CVoidType undefNode], [CPtrDeclr [] undefNode]))
     [ (vn, ([CTypeSpec $ CVoidType undefNode], [CPtrDeclr [] undefNode])) ]
     [ CBlockStmt $ cExpr $
@@ -158,7 +159,7 @@ printSProc p = printEnv $ unProc p
 newtype (:=>) a b = SSkel { unSkel :: DType a -> PM (CProc b) }
 
 annotate :: AnnStrat -> a :=> b -> a :=> b
-annotate st sk = SSkel $ \a -> local (\_ -> st) $ unSkel sk a
+annotate st (SSkel sk) = SSkel $ \a -> local (\_ -> st) $! sk a
 
 printASkel :: CVal a => AnnStrat -> a :=> b -> IO ()
 printASkel st (SSkel f) = do
@@ -179,10 +180,10 @@ pproc :: DType a -> CEnv -> PM (CProc a)
 pproc o e = pure $ SProc { unProc = e, outR = o }
 
 pipeline :: a :=> b -> b :=> c -> a :=> c
-pipeline q p = SSkel $ \x -> do
-  eq <- unSkel q x
-  ep <- unSkel p (outR eq)
-  pproc (outR ep) $ kleisliEnv (unProc eq) (unProc ep)
+pipeline (SSkel p) (SSkel q) = SSkel $ \x -> do
+  SProc ep op <- p x
+  SProc eq oq <- q op
+  pproc oq $! kleisliEnv ep eq
 
 instance CCat (:=>) where
   id  = idSkel
@@ -193,7 +194,7 @@ anyPID i = head $ partsL i
 
 annot :: (CVal a, CVal b) => PID -> a :-> b -> PM PID
 annot i f = do
-  b <- reader (f `inStrat`)
+  !b <- reader (f `inStrat`)
   if b then gets nextPID <* modify incPID else pure i
 
 --getName :: a :-> b -> PM String
@@ -244,38 +245,44 @@ constSkel v = SSkel $ \i -> do
   pproc (DVal p getCTy) $ singleton i p $ \_ -> pure (Lit v)
 
 fstSkel :: (CVal a, CVal b) => (a, b) :=> a
-fstSkel = SSkel $ \i -> pproc (ifst i) $ efst i (partsL i)
+fstSkel = SSkel $ \i -> do
+  let !ps' = partsL i
+      !i' = ifst i
+  pproc i' $! efst i ps'
 
 sndSkel :: (CVal a, CVal b) => (a, b) :=> b
-sndSkel = SSkel $ \i -> pproc (isnd i) $ esnd i (partsL i)
+sndSkel = SSkel $ \i -> do
+  let !ps' = partsL i
+      i' = isnd i
+  pproc i' $! esnd i ps'
 
 --------------------------------------------------------------------------------
 -- REFACTOR BELOW INTO INTERNAL
-extendProc :: DType b -> [PID] -> CProc a -> CProc a
-extendProc i ps (SProc e o) = SProc (extendEnv pst e) o
+extendProc :: DType b -> [PID] -> CEnv -> CEnv
+extendProc i !ps e = extendEnv pst e
   where
-    pst = map (\p -> (p, projTy i p)) ps
+    !pst = map (\p -> let !pr = projTy i p in (p, pr)) ps
 
-ppartsL :: CProc a -> [PID]
-ppartsL (SProc e _) = domEnvL e
-
-agreeDom :: DType c -> CProc a -> CProc b -> CProc a
-agreeDom i ea eb = extendProc i (ppartsL eb ++ partsL i) ea
+agreeDom :: DType c -> CEnv -> CEnv -> CEnv
+agreeDom i ea eb =
+  case (domEnvL eb ++ partsL i) of
+    ps -> extendProc i ps ea
 --------------------------------------------------------------------------------
 
 splitProc :: (CVal a, CVal b, CVal c)
           => DType a -> CProc b -> CProc c -> CProc (b, c)
-splitProc ir pl pr =
-  SProc { unProc = splitEnv (participants out) (unProc plr) (unProc prl)
+splitProc ir !(SProc el dol) !(SProc er dor) =
+  SProc { unProc = splitEnv parts plr prl
         , outR = out
         }
   where
-    plr = agreeDom ir pl pr
-    prl = agreeDom ir pr pl
-    out = DPair (outR plr) (outR prl)
+    !parts = participants out
+    !plr = agreeDom ir el er
+    !prl = agreeDom ir er el
+    !out = DPair dol dor
 
 splitSkel :: (CVal a, CVal b, CVal c) => a :=> b -> a :=> c -> a :=> (b, c)
-splitSkel f g = SSkel $ \i -> splitProc i <$> unSkel f i <*> unSkel g i
+splitSkel (SSkel f) (SSkel g) = SSkel $! \i -> splitProc i <$!> f i <*> g i
 
 instance CArr (:=>) where
   arr nm f = lift (arr nm f)
@@ -299,22 +306,24 @@ freezePIDs m = gets nextPID >>= (m <*) Prelude.. updatePID
 
 parState :: MonadState St m => m a -> m a -> m (a, a)
 parState m1 m2 = do
-  (x1, s1) <- freezePIDs ((,) <$> m1 <*> gets nextPID)
-  (x2, s2) <- (,) <$> m2 <*> gets nextPID
+  (x1, s1) <- freezePIDs ((,) <$!> m1 <*> gets nextPID)
+  (x2, s2) <- (,) <$!> m2 <*> gets nextPID
   updatePID (max s1 s2) *> pure (x1, x2)
 
 caseSkel :: forall a b c. (CVal a, CVal b, CVal c)
          => a :=> c -> b :=> c -> Either a b :=> c
-caseSkel f g = SSkel $ \i ->
+caseSkel sf@(SSkel f) sg@(SSkel g) = SSkel $ \i ->
   case i of
-    DTagL l _   -> unSkel f l
-    DTagR _ r   -> unSkel g r
+    DTagL l _   -> f l
+    DTagR _ r   -> g r
     DAlt  p l r -> do
-      (el, er) <- parState (unSkel (caseSkel f g) l) (unSkel (caseSkel f g) r)
+      let !(SSkel sc) = caseSkel sf sg
+      (el, er) <- parState (sc l) (sc r)
       pure $ choice p l r el er
     DVal p (CEither l r) -> do
-      let j = DAlt p (DTagL (DVal p l) getCTy) (DTagR getCTy (DVal p r))
-      unSkel (caseSkel f g) j
+      let !j = DAlt p (DTagL (DVal p l) getCTy) (DTagR getCTy (DVal p r))
+          !(SSkel sc) = caseSkel sf sg
+      sc j
 
 choice :: (CVal a, CVal c)
        => PID

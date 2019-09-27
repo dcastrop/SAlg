@@ -51,8 +51,7 @@ module Control.Monad.CGen
   , module X
   ) where
 
-import Control.Monad.RWS
-import Control.Monad.Except
+import Control.Monad.RWS.Strict
 import Control.Monad.Extra ( whenM )
 import Data.Char
 import Data.Map.Strict ( Map )
@@ -246,25 +245,28 @@ data Chan = Chan { chname :: Ident
                  }
 
 data CGSt st =
-  CGSt { varGen :: [String] -- ^ Free variable generator
+  CGSt { varGen :: ![String] -- ^ Free variable generator
 
-       , decls :: Map Ident CExtDecl -- ^ Mapping from identifier to declaration
-       , comm :: Map Ident String -- ^ Comments to be added to final file
-       , declOrder :: [Ident]
-       , channel :: Map (PID, PID, ECTy) Chan
+       , decls :: !(Map Ident CExtDecl) -- ^ Mapping from identifier to declaration
+       , comm :: !(Map Ident String) -- ^ Comments to be added to final file
+       , declOrder :: ![Ident]
+       , channel :: !(Map (PID, PID, ECTy) Chan)
 
-       , headerDecls :: Map Ident CExtDecl
-       , hdeclOrder :: [Ident]
-       , externalSt :: st
+       , headerDecls :: !(Map Ident CExtDecl)
+       , hdeclOrder :: !([Ident])
+       , externalSt :: !st
        }
 
 lookComm :: Ident -> CGSt st -> String
 lookComm i st = maybe "" id $ Map.lookup i $ comm st
 
 isDeclared :: Ident -> CGen st Bool
-isDeclared i = Map.member i <$> gets decls
+isDeclared i = do
+  b1 <- Map.member i <$> gets decls
+  b2 <- Map.member i <$> gets headerDecls
+  pure $ b1 || b2
 
-newtype CGen st a = CGen { unCGen :: ExceptT CGErr (RWS () CGLog (CGSt st)) a }
+newtype CGen st a = CGen { unCGen :: RWS () CGLog (CGSt st) a }
   deriving (Functor, Applicative, Monad)
 
 warn :: String -> CGen st ()
@@ -272,11 +274,11 @@ warn w = tell $ CGLog [w]
 
 generateFile :: st -> FilePath -> CGen st () -> IO ()
 generateFile ist fp m =
-  case runRWS (runExceptT $ unCGen m) () (initCGSt ist) of
-    (Left err, _, clog) -> do
-      hPutStrLn stderr $ show clog
-      putStrLn $ "\n"
-      hPutStrLn stderr $ show err
+  case runRWS (unCGen m) () (initCGSt ist) of
+    -- (Left err, _, clog) -> do
+    --   hPutStrLn stderr $ show clog
+    --   putStrLn $ "\n"
+    --   hPutStrLn stderr $ show err
     (_, st, clog) -> do
       hPutStrLn stderr $ show clog
       writeFile (fp ++ ".c") $ serialise st ++ "\n"
@@ -303,7 +305,6 @@ generateFile ist fp m =
 deriving instance MonadReader () (CGen st)
 deriving instance MonadWriter CGLog (CGen st)
 deriving instance MonadState (CGSt st) (CGen st)
-deriving instance MonadError CGErr (CGen st)
 
 addComment :: Ident -> String -> CGen st ()
 addComment i s = modify $ \st -> st { comm = Map.insert i s $ comm st }
@@ -458,10 +459,10 @@ chanTySpec nm (tl, ql) =
                      , CTypeSpec $ CIntType undefNode] []
       , fld qheadFld [ CTypeSpec $ CIntType undefNode] []
       , fld qtailFld [ CTypeSpec $ CIntType undefNode] []
-      , fld qmutexFld [ CTypeSpec $
-                        CTypeDef (internalIdent "pthread_mutex_t")
-                        undefNode
-                      ] []
+      -- , fld qmutexFld [ CTypeSpec $
+      --                   CTypeDef (internalIdent "pthread_mutex_t")
+      --                   undefNode
+      --                 ] []
       , fld qmemFld tl (CArrDeclr [] (CArrSize False qSize) undefNode : ql)
       ]
 
@@ -476,8 +477,8 @@ qheadFld = internalIdent "q_head"
 qtailFld :: Ident
 qtailFld = internalIdent "q_tail"
 
-qmutexFld :: Ident
-qmutexFld = internalIdent "q_mutex"
+-- qmutexFld :: Ident
+-- qmutexFld = internalIdent "q_mutex"
 
 qmemFld :: Ident
 qmemFld = internalIdent "q_mem"
@@ -535,15 +536,15 @@ mkSendc ch v =
   where
     body = map CBlockStmt
       [ CWhile isFull emptyStat False undefNode
-      , cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
+ --     , cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
       , CIf notFull (CCompound [] addToQ undefNode) Nothing undefNode
-      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
+ --     , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
       ]
     addToQ = map CBlockStmt
       [ cExpr $ CAssign CAssignOp (cIdx qmem qhd) (cVar v) undefNode
       , cExpr $ CAssign CAssignOp qhd incIdx undefNode
       , cExpr $ CUnary CPostIncOp qsz undefNode
-      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
+ --     , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
       , CReturn Nothing undefNode
       ]
     incIdx = (qhd `cPlus` intConst 1) `cMod` qSize
@@ -552,16 +553,16 @@ mkSendc ch v =
     qmem = cMemberAddr ch qmemFld
     isFull = cMemberAddr ch qsizeFld `cGeq` qSize
     notFull = cMemberAddr ch qsizeFld `cLt` qSize
-    mutex = cMemberAddr ch qmutexFld
+    -- mutex = cMemberAddr ch qmutexFld
 
 cIdx :: CExpr -> CExpr -> CExpr
 cIdx e1 e2 = CIndex e1 e2 undefNode
 
-pthreadMutexLock :: CExpr
-pthreadMutexLock = cVar $ internalIdent "pthread_mutex_lock"
-
-pthreadMutexUnlock :: CExpr
-pthreadMutexUnlock = cVar $ internalIdent "pthread_mutex_unlock"
+--pthreadMutexLock :: CExpr
+--pthreadMutexLock = cVar $ internalIdent "pthread_mutex_lock"
+--
+--pthreadMutexUnlock :: CExpr
+--pthreadMutexUnlock = cVar $ internalIdent "pthread_mutex_unlock"
 
 emptyStat :: CStat
 emptyStat = CCompound [] [] undefNode
@@ -628,15 +629,15 @@ mkRecvc ch v (tyd, tyq) =
     vdecl = CDeclr (Just v) tyq Nothing [] undefNode
     body = map CBlockStmt
       [ CWhile isEmpty emptyStat False undefNode
-      , cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
+      -- , cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
       , CIf notEmpty (CCompound [] getFromQ undefNode) Nothing undefNode
-      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
+      -- , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
       ]
     getFromQ = map CBlockStmt
       [ cExpr $ CAssign CAssignOp (cVar v) (cIdx qmem qtl) undefNode
       , cExpr $ CAssign CAssignOp qtl incIdx undefNode
       , cExpr $ CUnary CPostDecOp qsz undefNode
-      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
+      -- , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
       , CReturn (Just $ cVar v) undefNode
       ]
     incIdx = (qtl `cPlus` intConst 1) `cMod` qSize
@@ -645,7 +646,7 @@ mkRecvc ch v (tyd, tyq) =
     qmem = cMemberAddr ch qmemFld
     isEmpty = cMemberAddr ch qsizeFld `cLeq` intConst 0
     notEmpty = cMemberAddr ch qsizeFld `cGt` intConst 0
-    mutex = cMemberAddr ch qmutexFld
+    --mutex = cMemberAddr ch qmutexFld
 
 intConst :: Integer -> CExpr
 intConst i = CConst $ CIntConst (cInteger i) undefNode
@@ -658,7 +659,7 @@ initChan = CInitList
   [ ([],CInitExpr (CConst $ CIntConst (cInteger 0) undefNode) undefNode)
   , ([],CInitExpr (CConst $ CIntConst (cInteger 0) undefNode) undefNode)
   , ([],CInitExpr (CConst $ CIntConst (cInteger 0) undefNode) undefNode)
-  , ([],CInitExpr (cVar $ internalIdent "PTHREAD_MUTEX_INITIALIZER") undefNode)
+  -- , ([],CInitExpr (cVar $ internalIdent "PTHREAD_MUTEX_INITIALIZER") undefNode)
   , ([],CInitList [] undefNode)
   ] undefNode
 

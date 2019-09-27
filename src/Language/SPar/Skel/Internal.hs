@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -39,7 +40,7 @@ import Language.SPar
 
 data APar v t where
   APar :: forall a b v t. (CVal a, CVal b)
-       => (v a -> SPar v t (v b)) -> APar v t
+       => !(v a -> SPar v t (v b)) -> APar v t
 
 aPar :: forall a b v t tr. (CVal a, CVal b)
        => tr a -> (v a -> SPar v t (v b)) -> APar v t
@@ -60,7 +61,7 @@ printAPar l (APar f) = "/?" ++ show l ++ ". " ++ printCPar (l+1) (f (BVar l))
 kleisli :: PID -> CAPar -> CAPar -> CAPar
 kleisli pid (APar l) (APar r)
   = case eqTypeRep (codAPar l) (domAPar r) of
-      Just HRefl -> APar $ \v -> simpl $ l v >>= r
+      Just HRefl -> APar $ \v -> l v >>= r
       Nothing -> error $ "Type error in kleisli composition for participant "
                  ++ show pid ++ ":"
                  ++ printCPar 1 (l (BVar 0))
@@ -110,10 +111,10 @@ printEnv (Env e) = concatMap showproc $ Map.toList $ fmap (printAPar 0) e
     showproc (p, s) = show p ++ " |--> " ++ s ++ "\n\n"
 
 domEnv :: Env v t -> Set PID
-domEnv e = Map.keysSet $ unEnv e
+domEnv (Env e) = Map.keysSet e
 
 domEnvL :: Env v t -> [PID]
-domEnvL e = Map.keys $ unEnv e
+domEnvL (Env e) = Map.keys e
 
 -- Invariant: Map.lookup pid unProc :: Maybe (lookType pid outR)
 --lookup :: forall a v t. CVal a => TypeRep a -> Env v t -> PID -> APar v t
@@ -129,14 +130,16 @@ emptyEnv = Env { unEnv = Map.empty }
 
 unionEnvK :: (PID -> APar v t -> APar v t -> APar v t)
           -> Env v t -> Env v t -> Env v t
-unionEnvK f e1 e2 = Env { unEnv = Map.unionWithKey f (unEnv e1) (unEnv e2) }
+unionEnvK f e1 e2 =
+  case Map.unionWithKey f (unEnv e1) (unEnv e2) of
+    m -> Env m
 
 extendEnv :: [(PID, ATy)] -> CEnv -> CEnv
 extendEnv ps e = Env $ foldl' extend (unEnv e) ps
   where
     extend m (k, t) = Map.alter (doExtend t) k m
     doExtend :: ATy -> Maybe CAPar -> Maybe CAPar
-    doExtend (ATy t) Nothing = Just (aPar t $ \v -> pure v)
+    doExtend (ATy t) Nothing = let !a = aPar t $ \v -> pure v in Just a
     doExtend _ a = a
 
 agreeDom :: CEnv -> CEnv -> (CEnv, CEnv)
@@ -161,32 +164,40 @@ caseEnv ps e1 e2 = unionEnvK (cCase ps) e1' e2'
     (e1', e2') = agreeDom e1 e2
 
 kleisliEnv :: CEnv -> CEnv -> CEnv
-kleisliEnv p1 p2 = unionEnvK kleisli p1 p2
+kleisliEnv !p1 !p2 = unionEnvK kleisli p1 p2
 
 splitEnv :: Set PID -> CEnv -> CEnv -> CEnv
-splitEnv ps envL envR = unionEnvK (split ps) envL envR
+splitEnv ps !envL !envR = unionEnvK (split ps) envL envR
 
 data Dir = L | R
 
-projAPar :: Dir -> ATy -> CAPar
-projAPar L (ATy t@(CPair _ _)) = aPar t $ \v -> pure (afst v)
-projAPar R (ATy t@(CPair _ _)) = aPar t $ \v -> pure (asnd v)
-projAPar d (ATy (CEither l r)) =
-  case (projAPar d (ATy l), projAPar d (ATy r)) of
-    (APar f1, APar f2) -> aPar (eitherTy (domAPar f1) (domAPar f2)) $ \v ->
-      simpl $ mCse v (\y -> f1 y >>= \x -> pure (Inl x))
-                     (\y -> f2 y >>= \x -> pure (Inr x))
+projAPar :: Dir -> CTy a -> CAPar
+projAPar L t@(CPair _ _) = let !a = aPar t $ \v -> pure (afst v) in a
+projAPar R t@(CPair _ _) = let !a = aPar t $ \v -> pure (asnd v) in a
+projAPar d (CEither l r) =
+  case (projAPar d l, projAPar d r) of
+    (APar f1, APar f2) ->
+      let !a = aPar (eitherTy (domAPar f1) (domAPar f2)) $ \v ->
+            simpl $ mCse v (\y -> f1 y >>= \x -> pure (Inl x))
+            (\y -> f2 y >>= \x -> pure (Inr x))
+      in a
 projAPar _ _ = error "Projection on ill-typed term"
 
 efst :: DType (a, b) -> [PID] -> CEnv
-efst t = eproj t L
+efst !t !ps = eproj t L ps
 
 esnd :: DType (a, b) -> [PID] -> CEnv
-esnd t = eproj t R
+esnd !t !ps = eproj t R ps
 
 eproj :: DType (a, b) -> Dir -> [PID] -> CEnv
 eproj t dr ps =
-  Env $ Map.fromList $ map (\p -> (p, projAPar dr (projTy t p))) ps
+  force r `seq` Env $! Map.fromList r
+  where
+    force [] = ()
+    force ((x, y):xs) = x `seq` y `seq` force xs
+    !r = map projP ps
+    projP !p = case projTy t p of
+                 ATy tp -> let !pap = projAPar dr tp in (p, pap)
 
 tagl :: Alg (Either () ())
 tagl = Inl $ Lit ()
@@ -229,10 +240,10 @@ msg int@(DAlt pc li ri) p
   | p `Set.notMember` ps = kleisliEnv (choiceEnv pc li ri $ Set.singleton p) env
   | otherwise = env
   where
-    ps = participants int
+    !ps = participants int
     env = caseEnv (Set.insert p ps) (msg li p) (msg ri p)
 msg (DVal pt t) p
-  | p Prelude.== pt = Env $ Map.singleton p $ aPar t $ \v -> pure v
+  | p Prelude.== pt = Env $! Map.singleton p $! aPar t $! \v -> pure v
   | otherwise = env
   where
     env = Env $ Map.fromList [(pt, snd), (p, rcv)]
@@ -240,14 +251,16 @@ msg (DVal pt t) p
     rcv = APar @() $ \_ -> trecv t pt
 msg (DTagL l r) p = kleisliEnv (msg l p) env
   where
-    env = Env $ Map.singleton p $ aPar l $ \v -> pure (tinl v r)
+    env = Env $ Map.singleton p $! aPar l $! \v -> pure (tinl v r)
 msg (DTagR l r) p = kleisliEnv (msg r p) env
   where
-    env = Env $ Map.singleton p $ aPar r $ \v -> pure (tinr l v)
+    env = Env $ Map.singleton p $! aPar r $! \v -> pure (tinr l v)
 msg i@(DPair l r) p = unionEnvK (split $ Set.singleton p) envL envR
   where
-    envL = kleisliEnv (eproj i L $ Set.toList $ participants i) (msg l p)
-    envR = kleisliEnv (eproj i R $ Set.toList $ participants i) (msg r p)
+    envL = kleisliEnv pl (msg l p)
+    envR = kleisliEnv pr (msg r p)
+    !pl = eproj i L $! partsL i
+    !pr = eproj i R $! partsL i
 
 doInj :: Dir -> ATy -> ATy -> CAPar
 doInj L (ATy tl) (ATy tr) = aPar tl $ \v -> pure (tinl v tr)

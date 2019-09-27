@@ -1,3 +1,7 @@
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE TypeFamilyDependencies #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -9,7 +13,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 {- LANGUAGE StandaloneDeriving #-}
 {- LANGUAGE NoImplicitPrelude #-}
-{- LANGUAGE TypeApplications #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE IncoherentInstances #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -23,6 +28,7 @@ module Control.CArr.CSyn
   , fix
 --  , Fun
   , prim
+  , primLit
   , cfun
   , app
   , pair
@@ -41,6 +47,8 @@ module Control.CArr.CSyn
   , par
   , (@@)
   , (Prelude.$)
+  , IsSing
+  , FromNat
   , X.CArrCmp(..)
   , Prelude.Num(..)
   , Prelude.Fractional(..)
@@ -48,6 +56,14 @@ module Control.CArr.CSyn
   , X.CArrFix
   , Either
   , Int
+  , TProd
+  , SINat
+  , pmap
+  , smap
+  , pfold
+  , sfold
+  , ssplit
+  , psplit
 ) where
 
 import qualified Prelude
@@ -56,6 +72,8 @@ import Data.C
 import qualified Control.CCat as X
 import qualified Control.CArr as X
 import Control.CArr ( CAlg )
+
+import GHC.TypeLits
 
 class (CVal ctx, CVal ctx') => ctx :<: ctx' where
   sub :: CAlg t => t ctx' ctx
@@ -112,6 +130,9 @@ app f x =  f X.. x
 
 prim :: (CAlg t, CVal a, CVal b, CVal ctx) => String -> t ctx a -> t ctx b
 prim s x = X.arr s Prelude.undefined X.. x
+
+primLit :: (CAlg t, CVal a, CVal ctx) => a -> t ctx a
+primLit s = X.lit s
 
 vlet :: forall t ctx a b. (CAlg t, CVal ctx, CVal a, CVal b)
      => t ctx a -> (Var t (a, ctx) a -> t (a, ctx) b) -> t ctx b
@@ -188,3 +209,147 @@ par f x = f (x X.>>> X.newProc)
 (@@) :: (CAlg t, CVal ctx, CVal a) => (t ctx a -> t ctx b) -> Prelude.Integer
      -> t ctx a -> t ctx b
 f @@ p = \x -> f (x X.>>> X.runAt p)
+
+---- Pairs
+
+data INat = Z | S INat
+
+data family Sing :: k -> *
+
+data instance Sing (n :: INat) where
+  SZ :: Sing 'Z
+  SS :: Sing n -> Sing ('S n)
+
+class IsSing a where sing :: Sing a
+instance IsSing 'Z where sing = SZ
+instance IsSing n => IsSing ('S n) where sing = SS sing
+type SINat (n :: INat) = Sing n
+
+type TProd n a = Prod (FromNat (n-1)) a
+
+type family Prod (n :: INat) (a :: *) = r where
+  Prod 'Z a = a
+  Prod ('S n) a = (a, Prod n a)
+
+data CDict a where
+  CDict :: CVal a => CDict a
+
+cvalProd :: CVal a => SINat n -> t a -> CDict (Prod n a)
+cvalProd SZ _ = CDict
+cvalProd (SS m) t = case cvalProd m t of
+                    CDict -> CDict
+
+fmapP' :: (CAlg t, CVal a, CVal b, CVal ctx)
+       => SINat n -> v a -> v b -> Bool
+       -> (t ctx a -> t ctx b) -> t ctx (Prod n a) -> t ctx (Prod n b)
+fmapP' SZ _ _ b f x
+  | b = f (x X.>>> X.newProc)
+  | Prelude.otherwise  = f x
+fmapP' (SS m) tya tyb b f x =
+  case (cvalProd m tya, cvalProd m tyb) of
+    (CDict, CDict) ->
+      let fx = if b then f (fst x X.>>> X.newProc)
+               else f (fst x)
+      in pair (fx, fmapP' m tya tyb b f (snd x))
+
+
+--fmapPIx :: SINat n -> (Int -> a -> b) -> Int -> Prod n a -> Prod n b
+--fmapPIx SZ _ _ = const unit
+--fmapPIx (SS m) f k = f k *** fmapPIx m f (k+1)
+
+pmap :: forall n t a b ctx.
+        (CAlg t, CVal a, CVal b, CVal ctx, IsSing (FromNat n))
+     => (t ctx a -> t ctx b)
+     -> t ctx (Prod (FromNat n) a) -> t ctx (Prod (FromNat n) b)
+pmap = fmapP' (sing :: SINat (FromNat n)) Proxy Proxy Prelude.True
+
+smap :: forall n t a b ctx.
+        (CAlg t, CVal a, CVal b, CVal ctx, IsSing (FromNat n))
+     => (t ctx a -> t ctx b)
+     -> t ctx (Prod (FromNat n) a) -> t ctx (Prod (FromNat n) b)
+smap = fmapP' (sing :: SINat (FromNat n)) Proxy Proxy Prelude.False
+
+--assocL :: (CAlg t, CVal a, CVal b, CVal c) => t (a, (b, c)) ((a, b), c)
+--assocL = cfun Prelude.$ \x -> pair (pair (fst x, fst (snd x)), snd (snd x))
+
+type family Div2 (n :: INat) where
+  Div2 'Z = 'Z
+  Div2 ('S 'Z) = 'Z
+  Div2 ('S ('S n)) = 'S (Div2 n)
+
+div2 :: SINat n -> SINat (Div2 n)
+div2 SZ = SZ
+div2 (SS SZ) = SZ
+div2 (SS (SS n)) = SS (div2 n)
+
+data Proxy a = Proxy
+
+red :: forall t a ctx n. (CAlg t, CVal a, CVal ctx)
+    => SINat n -> (t ctx (a, a) -> t ctx a)
+    -> t ctx (Prod n a) -> t ctx (Prod (Div2 n) a)
+red SZ _ x = x
+red (SS SZ) f x = f x
+red (SS (SS n)) f x =
+  case (cvalProd n (Proxy :: Proxy a), cvalProd (div2 n) (Proxy :: Proxy a)) of
+    (CDict, CDict) ->
+      let !xr = snd (snd x)
+          !x1 = fst x
+          !x2 = fst (snd x)
+      in f (x1 X.&&& x2) X.&&& red n f xr
+
+pfold' :: forall t n a ctx. (CAlg t, CVal a, CVal ctx)
+       => SINat n -> (t ctx (a, a) -> t ctx a)
+       -> t ctx (Prod n a) -> t ctx a
+pfold' SZ _ z = z
+pfold' (SS SZ) f x = f x
+pfold' n f x =
+  case (cvalProd n (Proxy :: Proxy a), cvalProd dn2 (Proxy :: Proxy a)) of
+    (CDict, CDict) -> let !rd = red n f x
+                      in
+                        pfold' dn2 f rd
+  where
+    !dn2 = div2 n
+
+pfold :: forall n t a ctx. (CAlg t, CVal a, CVal ctx, IsSing (FromNat n))
+       => (t ctx (a, a) -> t ctx a)
+       -> t ctx (Prod (FromNat n) a) -> t ctx a
+pfold = pfold' (sing :: SINat (FromNat n))
+
+sfold' :: forall t n a ctx. (CAlg t, CVal a, CVal ctx)
+      => SINat n -> (t ctx (a, a) -> t ctx a) -> t ctx (Prod n a) -> t ctx a
+sfold' SZ _  x = x
+sfold' (SS n) f x =
+  case (cvalProd n (Proxy :: Proxy a)) of
+    CDict -> f (pair (fst x, sfold' n f (snd x)))
+
+sfold :: forall n t a ctx. (CAlg t, CVal a, CVal ctx, IsSing (FromNat n))
+      => (t ctx (a, a) -> t ctx a) -> t ctx (Prod (FromNat n) a) -> t ctx a
+sfold = sfold' (sing :: SINat (FromNat n))
+
+split' :: forall t a ctx n. (CAlg t, CVal a, CVal ctx)
+      => Bool -> SINat n -> Prelude.Integer -> (t ctx Int -> t ctx a) -> t ctx (Prod n a)
+split' b SZ i g =
+  if b then g (Prelude.fromInteger i) X.>>> X.newProc
+  else g (Prelude.fromInteger i)
+split' b (SS n) i g =
+  case (cvalProd n (Proxy :: Proxy a)) of
+    CDict ->
+      let gi = if b then g (Prelude.fromInteger i) X.>>> X.newProc
+               else g (Prelude.fromInteger i)
+      in pair (gi, split' b n (i Prelude.+ 1) g)
+
+psplit :: forall n t a ctx. (CAlg t, CVal a, CVal ctx, IsSing (FromNat n))
+      => (t ctx Int -> t ctx a) -> t ctx (Prod (FromNat n) a)
+psplit = split' Prelude.True (sing :: SINat (FromNat n)) 0
+
+ssplit :: forall n t a ctx. (CAlg t, CVal a, CVal ctx, IsSing (FromNat n))
+      => (t ctx Int -> t ctx a) -> t ctx (Prod (FromNat n) a)
+ssplit = split' Prelude.False (sing :: SINat (FromNat n)) 0
+
+type family ToNat (i :: INat) :: Nat where
+  ToNat 'Z = 0
+  ToNat ('S n) = 1 + ToNat n
+
+type family FromNat (i :: Nat) :: INat where
+  FromNat 0 = 'Z
+  FromNat n = 'S (FromNat (n-1))

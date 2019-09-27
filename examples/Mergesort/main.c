@@ -15,10 +15,10 @@
   var = 0; \
   for(int i=0; i<REPETITIONS; i++){ \
     in = randvec(size); \
-    clock_gettime(CLOCK_MONOTONIC, &start); \
+    start = get_time(); \
     out = f(in); \
-    clock_gettime(CLOCK_MONOTONIC, &end); \
-    time_diff = tspec2ms(&end) - tspec2ms(&start); \
+    end = get_time(); \
+    time_diff = end - start; \
     time_old = time; \
     time += (time_diff - time)/(i+1); \
     var += (time_diff - time) * (time_diff - time_old); \
@@ -29,37 +29,49 @@
   printf("\t\tstddev: %f\n", sqrt(var / (REPETITIONS - 1))); \
 }
 
+static inline double get_time()
+{
+    struct timeval t;
+    gettimeofday(&t, NULL);
+    return t.tv_sec + t.tv_usec*1e-6;
+}
+
+vec_int_t randvec(size_t s){
+  vec_int_t in;
+  in.elems = (int *)calloc(s, sizeof(int));
+  in.size = s;
+
+  srand(time(NULL));
+
+  for (int i = 0; i < s; i++) {
+    in.elems[i] = (int)rand() % 100;
+  }
+
+  return in;
+}
+
 vec_int_t merge(pair_int_pair_vec_int_vec_int_t in){
   vec_int_t out;
+  int z=0;
+  int i=0;
+  int j=0;
   int *tmp = (int *)malloc(in.fst * sizeof(int));
-  out = in.snd.fst;
-  for (int z = 0; z < in.fst; z++) {
-    if (in.snd.fst.size > 0 && in.snd.snd.size > 0) {
-      if (in.snd.fst.elems[0] <= in.snd.snd.elems[0]) {
-        tmp[z] = in.snd.fst.elems[0];
-        in.snd.fst.size--;
-        in.snd.fst.elems++;
+  while (i < in.snd.fst.size && j < in.snd.snd.size) {
+      if (in.snd.fst.elems[i] <= in.snd.snd.elems[j]) {
+        tmp[z++] = in.snd.fst.elems[i++];
       } else {
-        tmp[z] = in.snd.snd.elems[0];
-        in.snd.snd.size--;
-        in.snd.snd.elems++;
+        tmp[z++] = in.snd.snd.elems[j++];
       }
-    }
-    else if (in.snd.fst.size > 0) {
-      tmp[z] = in.snd.fst.elems[0];
-      in.snd.fst.size--;
-      in.snd.fst.elems++;
-    }
-    else if (in.snd.snd.size > 0) {
-      tmp[z] = in.snd.snd.elems[0];
-      in.snd.snd.size--;
-      in.snd.snd.elems++;
-    }
+  }
+  if (i < in.snd.fst.size) {
+    memcpy(tmp + z, in.snd.fst.elems + i, sizeof(int) * (in.fst - z));
+  }
+  if (j < in.snd.snd.size) {
+    memcpy(tmp + z, in.snd.snd.elems + j, sizeof(int) * (in.fst - z));
   }
   out.size = in.fst;
-  for (int r=0; r < in.fst; r++) {
-    out.elems[r] = tmp[r];
-  }
+  out.elems = in.snd.fst.elems;
+  memcpy(out.elems, tmp, in.fst * sizeof(int));
   free(tmp);
   return out;
 }
@@ -69,19 +81,6 @@ void usage(const char *nm){
   exit(-1);
 }
 
-vec_int_t randvec(ssize_t s){
-  vec_int_t in;
-  in.elems = (int *)calloc(s, sizeof(int));
-  in.size = s;
-
-  srandom(time(NULL));
-
-  for (int i = 0; i < s; i++) {
-    in.elems[i] = (int)random() % s;
-  }
-
-  return in;
-}
 
 long tspec2ms(struct timespec *tv)
 {
@@ -104,13 +103,18 @@ int main(int argc, const char *argv[]) {
   }
 
   vec_int_t in, out;
-  struct timespec start, end;
+  double start, end;
   // Warmup
   for(int i=0; i<REPETITIONS; i++){
     in = randvec(size);
     out = parMsort0(in);
+  for (int i = 0; i < out.size; i++) {
+    printf("%d ", out.elems[i]);
+  }
+  printf("\n\n");
     free(in.elems);
   }
+
 
   double time = 0;
   double time_diff = 0;
@@ -133,7 +137,7 @@ int main(int argc, const char *argv[]) {
     // clock_gettime(CLOCK_MONOTONIC, &start);
     // out = parMsort1(in);
     // clock_gettime(CLOCK_MONOTONIC, &end);
-    // time += (tspec2ms(&end) - tspec2ms(&start))/REPETITIONS;
+    // time += (end - start)/REPETITIONS;
     // free(in.elems);
   // }
   // printf("ms1: %d\n", time);
