@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE KindSignatures #-}
@@ -21,7 +22,7 @@ module Language.SPar
   , TyFun (..)
   , commStruct
   , pprSType
-  , getTyRep
+  -- , getTyRep
   , send
   , recv
   , trecv
@@ -42,43 +43,44 @@ import Control.Monad.CGen
 import Data.C
 import Language.Alg
 
+import Data.List (nub)
 import qualified Data.Set as Set
 import           Data.Set  ( Set )
 
 data SPar v t a where
   MSnd :: CVal a
-       => v a
-       -> PID
-       -> SPar v t b
+       => !(v a)
+       -> !PID
+       -> !(SPar v t b)
        -> SPar v t b
 
   MRcv :: CVal a
-       => PID
-       -> TypeRep a
-       -> (v a -> SPar v t b)
+       => !PID
+       -> !(TypeRep a)
+       -> !(v a -> SPar v t b)
        -> SPar v t b
 
   MRun :: (CVal a, CVal b)
-       => t a b
-       -> v a
-       -> (v b -> SPar v t c)
+       => !(t a b)
+       -> !(v a)
+       -> !(v b -> SPar v t c)
        -> SPar v t c
 
   MCse :: (CVal a, CVal b, CVal c)
-       => v (Either a b)
-       -> (v a -> SPar v t (v c))
-       -> (v b -> SPar v t (v c))
-       -> (v c -> SPar v t d)
+       => !(v (Either a b))
+       -> !(v a -> SPar v t (v c))
+       -> !(v b -> SPar v t (v c))
+       -> !(v c -> SPar v t d)
        -> SPar v t d
 
   MIf :: CVal a
-       => v Bool
-       -> SPar v t (v a)
-       -> SPar v t (v a)
-       -> (v a -> SPar v t b)
+       => !(v Bool)
+       -> !(SPar v t (v a))
+       -> !(SPar v t (v a))
+       -> !(v a -> SPar v t b)
        -> SPar v t b
 
-  MRet :: a
+  MRet :: !a
        -> SPar v t a
 
 isVar :: Alg t -> Integer -> Bool
@@ -201,43 +203,58 @@ bcast v (p:ps) = MSnd v p $ bcast v ps
 
 data DType a where
   DPair  :: (CVal a, CVal b)
-         => DType a
-         -> DType b
+         => !(DType a)
+         -> !(DType b)
          -> DType (a, b)
 
   DTagL :: (CVal a, CVal b)
-        => DType a
+        => !(DType a)
         -> CTy b
         -> DType (Either a b)
 
   DTagR :: (CVal a, CVal b)
         => CTy a
-        -> DType b
+        -> !(DType b)
         -> DType (Either a b)
 
   -- DVec :: CVal a => [DType a] -> DType [a]
 
   DVal :: CVal a => PID -> CTy a -> DType a
-  DAlt :: CVal a => PID -> DType a -> DType a -> DType a
+  DAlt :: CVal a => PID -> !(DType a) -> !(DType a) -> DType a
 
-getTyRep :: DType a -> TypeRep a
-getTyRep (DPair _ _) = typeRep
-getTyRep (DTagL _ _) = typeRep
-getTyRep (DTagR _ _) = typeRep
-getTyRep (DVal _ _) = typeRep
-getTyRep (DAlt _ _ _) = typeRep
+--getTyRep :: DType a -> TypeRep a
+--getTyRep (DPair _ _) = typeRep
+--getTyRep (DTagL _ _) = typeRep
+--getTyRep (DTagR _ _) = typeRep
+--getTyRep (DVal _ _) = typeRep
+--getTyRep (DAlt _ _ _) = typeRep
 
 partsL :: DType a -> [PID]
-partsL = Set.toList . participants
+partsL d = force ppd `seq` ppd
+  where
+    ppd = nub $! pp d []
+    force [] = ()
+    force (x:xs) = x `seq` force xs
+    pp :: DType b -> [PID] -> [PID]
+    pp (DAlt p l r) !ps = pp l (pp r (p:ps))
+    pp (DVal p _) !ps = p : ps
+    pp (DTagL p _) !ps = pp p ps
+    pp (DTagR _ p) !ps = pp p ps
+    pp (DPair l r) !ps = pp l (pp r ps)
 
 participants :: DType a -> Set PID
-participants (DAlt p l r) =
-  Set.unions [Set.singleton p, participants l, participants r]
+participants (DAlt p l r) = pp
+  where
+    !pl = participants l
+    !pr = participants r
+    !pp = Set.insert p $! Set.union pl pr
 -- participants (DVec ps) = Set.unions $ map participants ps
 participants (DVal p _) = Set.singleton p
 participants (DTagL p _) = participants p
 participants (DTagR _ p) = participants p
-participants (DPair l r) = participants l `Set.union` participants r
+participants (DPair l r) = p
+  where
+    !p = participants l `Set.union` participants r
 
 ifst :: (CVal a, CVal b) => DType (a, b) -> DType a
 ifst (DVal p (CPair l _)) = DVal p l
@@ -250,13 +267,7 @@ isnd (DPair _ r) = r
 isnd (DAlt p l r) = DAlt p (isnd l) (isnd r)
 
 data ATy where
-  ATy :: CVal a => CTy a -> ATy
-
-pairATy :: ATy -> ATy -> ATy
-pairATy (ATy l) (ATy r) = ATy $ CPair l r
-
-eitherATy :: ATy -> ATy -> ATy
-eitherATy (ATy l) (ATy r) = ATy $ CEither l r
+  ATy :: CVal a => !(CTy a) -> ATy
 
 instance Eq ATy where
   ATy l == ATy r = case eqTypeRep (getCTyR l) (getCTyR r) of
@@ -268,15 +279,22 @@ data ATyFn where
 
 projTy :: DType a -> PID -> ATy
 projTy i p
-  | p `Set.notMember` participants i = ATy CUnit
-projTy (DPair l r) p = pairATy (projTy l p) (projTy r p)
+  | not (p `elem` pri) = ATy CUnit
+  where
+    !pri = force prr `seq` prr
+    !prr = partsL i
+    force [] = ()
+    force (x:xs) = x `seq` force xs
+projTy (DPair l r) p = case (projTy l p, projTy r p) of
+                         (ATy ll, ATy rr) -> ATy $! CPair ll rr
 projTy (DTagL i _) p = projTy i p
 projTy (DTagR _ i) p = projTy i p
 projTy (DVal pt t) p
   | p Prelude.== pt = ATy t
   | otherwise = ATy CUnit
 projTy i@(DAlt _ l r) p
-  | p `Set.member` participants i = eitherATy tl tr
+  | p `Set.member` participants i = case (tl, tr) of
+                                      (ATy tll, ATy trr) -> ATy $ CEither tll trr
   | otherwise = if tl Prelude.== tr then tl else error "Error: ill-formed interface"
   where
     tl = projTy l p
@@ -329,11 +347,11 @@ instance CAp t v => Applicative (SPar v t) where
   af <*> av = join (fmap ((`fmap` af) . flip ($)) av)
 
 join :: SPar v t (SPar v t a) -> SPar v t a
-join (MSnd e p k) = MSnd e p $ join k
-join (MRcv p t k) = MRcv p t $ fmap join k
-join (MRun t a k) = MRun t a $ fmap join k
-join (MCse e kl kr k) = MCse e kl kr (fmap join k)
-join (MIf e kl kr k) = MIf e kl kr (fmap join k)
+join (MSnd e p k) = MSnd e p $! join k
+join (MRcv p t k) = MRcv p t $! fmap join k
+join (MRun t a k) = MRun t a $! fmap join k
+join (MCse e kl kr k) = MCse e kl kr $! fmap join k
+join (MIf e kl kr k) = MIf e kl kr $! fmap join k
 join (MRet f) = f
 
 instance CAp t v => Monad (SPar v t) where
@@ -354,53 +372,53 @@ simpl m@MRet{} = m
 declareParFun :: (CVal a, CVal b) => String -> PID -> (Alg a -> CPar b) -> CGen ASt ()
 declareParFun pn p f
   | eraseTy (domTy f) Prelude.== ECUnit = do
-      ctys <- cTySpec cty
-      (cv, body) <- codeGen p (f $ CVal $ cVar cUnit)
+      !ctys <- cTySpec cty
+      !(cv, body) <- codeGen p (f $ CVal $ cVar cUnit)
       newFun (fn, ctys) []
         (body ++ [CBlockStmt $ CReturn (Just cv) undefNode])
 
   | otherwise = do
-      dv <- freshVar
-      ctys <- cTySpec cty
-      dtys <- cTySpec dty
-      (cv, body) <- codeGen p (f $ CVal $ cVar dv)
+      !dv <- freshVar
+      !ctys <- cTySpec cty
+      !dtys <- cTySpec dty
+      !(cv, body) <- codeGen p (f $ CVal $ cVar dv)
       newFun (fn, ctys) [(dv, dtys)]
         (body ++ [CBlockStmt $ CReturn (Just cv) undefNode])
   where
-    fn = internalIdent $ pn ++ "_part_" ++ show p
-    dty = domTy f
-    cty = codTy f
+    !fn = internalIdent $ pn ++ "_part_" ++ show p
+    !dty = domTy f
+    !cty = codTy f
 
 codeGen :: CVal a => PID -> CPar a -> CGen ASt (CExpr, [CBlockItem])
 codeGen self = cgen
   where
     cgen :: forall a. CVal a => CPar a -> CGen ASt (CExpr, [CBlockItem])
     cgen (MSnd e@(CVal iv)  p  k) = do
-      s1 <- csend self p (getTy e) $ iv
-      (rv, s2) <- cgen k
+      !s1 <- csend self p (getTy e) $ iv
+      !(rv, s2) <- cgen k
       pure (rv, s1 ++ s2)
     cgen (MSnd e  p  k) = do
-      (v1, s1) <- compileAlg e
-      s2 <- csend self p (getTy e) v1
-      (rv, s3) <- cgen k
+      !(v1, s1) <- compileAlg e
+      !s2 <- csend self p (getTy e) v1
+      !(rv, s3) <- cgen k
       pure (rv, s1 ++ s2 ++ s3)
     cgen (MRcv p ty fk) = do
-      v1 <- freshVar
-      dv1 <- v1 <:: ty
-      s1 <- crecv self p (getTy ty) $ cVar v1
-      (rv, s2) <- cgen (fk $ CVal $ cVar v1)
+      !v1 <- freshVar
+      !dv1 <- v1 <:: ty
+      !s1 <- crecv self p (getTy ty) $ cVar v1
+      !(rv, s2) <- cgen (fk $ CVal $ cVar v1)
       pure (rv, dv1 ++ s1 ++ s2)
     cgen (MRun f e fk) = do
-      (v, s1) <- compileAlg (ap f e)
-      (rv, s2) <- cgen (fk $ CVal v)
+      !(v, s1) <- compileAlg (ap f e)
+      !(rv, s2) <- cgen (fk $ CVal v)
       pure (rv, s1 ++ s2)
     cgen (MCse e kl kr fk) = do
-      vk <- freshVar
-      dvk <- vk <:: domTy fk
-      (ve, se) <- compileAlg e
-      (vkl, sl) <- cgen (kl $ CVal $ v1l ve)
-      (vkr, sr) <- cgen (kr $ CVal $ v1r ve)
-      (rv, sk) <- cgen (fk $ CVal $ cVar vk)
+      !vk <- freshVar
+      !dvk <- vk <:: domTy fk
+      !(ve, se) <- compileAlg e
+      !(vkl, sl) <- cgen (kl $ CVal $ v1l ve)
+      !(vkr, sr) <- cgen (kr $ CVal $ v1r ve)
+      !(rv, sk) <- cgen (fk $ CVal $ cVar vk)
       pure (rv, dvk ++ se ++
              cs ve (sl ++ cret (cVar vk) vkl) (sr ++ cret (cVar vk) vkr) : sk)
         where
@@ -414,12 +432,12 @@ codeGen self = cgen
             | otherwise = cMember ce f
           cs v1 sl sr = CBlockStmt $ cCase (mMember v1 tagFld) sl sr
     cgen (MIf e kl kr fk) = do
-      vv <- freshVar
-      dv <- vv <:: domTy fk
-      (v1, cb) <- compileAlg e
-      (vx, cx) <- cgen kl
-      (vy, cy) <- cgen kr
-      (rv, ck) <- cgen (fk $ CVal $ cVar vv)
+      !vv <- freshVar
+      !dv <- vv <:: domTy fk
+      !(v1, cb) <- compileAlg e
+      !(vx, cx) <- cgen kl
+      !(vy, cy) <- cgen kr
+      !(rv, ck) <- cgen (fk $ CVal $ cVar vv)
       pure (rv, dv ++ cb ++
         (CBlockStmt $ CIf v1 (CCompound [] (cx ++ cret (cVar vv) vx) undefNode)
                       (Just $ CCompound [] (cy ++ cret (cVar vv) vy) undefNode)
