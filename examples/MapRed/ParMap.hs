@@ -19,23 +19,16 @@ import Language.SPar.Skel ( (:=>) )
 --timesBench :: CAlg f => f (TProd 32 [Int]) (TProd 32 [Int])
 --timesBench = cfun $ pmap (psize @32) (prim "sum")
 
-scalarProd :: forall n f. (CValProd n [Int], CAlg f)
-           => f (TProd n [Int]) (TProd n [Int])
-scalarProd = cfun $ \z -> smap @n @[Int] @[Int] (par $ prim "prod") z
+scalarProd :: forall n f. (CValProd n [[Int]], CValProd n [Int], CAlg f)
+           => f (TProd n [[Int]]) (TProd n [Int])
+scalarProd = cfun $ \z -> smap @n @[[Int]] @[Int] (par $ prim "prod") z
 
-splitv :: forall n f. (CValProd n [Int], CAlg f)
-           => f [Int] (TProd n [Int])
-splitv = cfun $ \z ->
-  vlet (vsize z / 32) $
-  \sz -> let takeFun y = vtake sz $ vdrop (y * sz) z in
-    ssplit @n takeFun
-
-catv :: forall n f. (CValProd n [Int], CAlg f)
-           => f (TProd n [Int]) [Int]
+catv :: forall n f a. (CValProd n [a], CAlg f, CVal a)
+           => f (TProd n [a]) [a]
 catv = cfun $ \z -> sfold @n (prim "cat" @@ 0) z
 
-parProd :: [Int] :=> [Int]
-parProd = cfun $ \x -> catv @5 `app` scalarProd @5 `app` splitv @5 `app` x
+parProd :: [[Int]] :=> [Int]
+parProd = cfun $ \x -> catv @5 `app` scalarProd @5 `app` splitv @5 x
 
 
 --  cfun $ \i ->
