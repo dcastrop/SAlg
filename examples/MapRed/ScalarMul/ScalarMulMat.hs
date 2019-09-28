@@ -27,7 +27,8 @@ catv :: forall n f a. (CValProd n [a], CAlg f, CVal a)
            => f (TProd n [a]) [a]
 catv = cfun $ \z -> sfold @n (prim "cat" @@ 0) z
 
-parProd :: forall n. CValProd n [Int] => [[Int]] :=> [[Int]]
+parProd :: forall n. (CValProd n [[Int]], CValProd n [Int])
+        => [[Int]] :=> [[Int]]
 parProd = cfun $ \x -> catv @n `app` scalarProd @n `app` splitv @n x
 
 parProd0 :: [[Int]] :=> [[Int]]
