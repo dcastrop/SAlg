@@ -32,13 +32,13 @@ import qualified Language.SPar.Skel as S
 --parTest = annotate (ann (S.vsize :: [Int] :-> Int)) $ test2
 
 msort :: (CAlg f, CArrFix f) => Int -> f [Int] [Int]
-msort n = fix n $ \ms x ->
+msort n = fix n $ \ms -> par $ \x ->
   vlet (vsize x) $ \sz ->
   if sz <= 1
   then x
   else vlet (sz / 2) $ \sz2 ->
-    vlet (par ms $ vtake sz2 x) $ \xl ->
-    vlet (par ms $ vdrop sz2 x) $ \xr ->
+    vlet (ms $ vtake sz2 x) $ \xl ->
+    vlet (ms $ vdrop sz2 x) $ \xr ->
     (prim "merge") $ pair (sz, pair (xl, xr))
 
 msort_2 :: (CAlg f, CArrFix f) => f [Int] [Int]
