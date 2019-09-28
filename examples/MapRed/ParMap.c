@@ -49,7 +49,17 @@ q_vec_int_t ch5 = { 0, 0, 0, { } };
 
 q_vec_int_t ch6 = { 0, 0, 0, { } };
 
-vec_int_t scalarProd_part_0(vec_int_t v_a)
+q_vec_int_t ch7 = { 0, 0, 0, { } };
+
+q_vec_int_t ch8 = { 0, 0, 0, { } };
+
+q_vec_int_t ch9 = { 0, 0, 0, { } };
+
+q_vec_int_t ch10 = { 0, 0, 0, { } };
+
+q_vec_int_t ch11 = { 0, 0, 0, { } };
+
+vec_int_t parProd_part_0(vec_int_t v_a)
 {
     int v_b;
     v_b = v_a.size / 32;
@@ -109,147 +119,119 @@ vec_int_t scalarProd_part_0(vec_int_t v_a)
     q_vec_int_put(&ch5, v_t);
     vec_int_t v_w;
     v_w = q_vec_int_get(&ch6);
-    return v_w;
-}
-
-q_vec_int_t ch7 = { 0, 0, 0, { } };
-
-q_vec_int_t ch8 = { 0, 0, 0, { } };
-
-q_vec_int_t ch9 = { 0, 0, 0, { } };
-
-unit_t scalarProd_part_1()
-{
     vec_int_t v_x;
-    v_x = q_vec_int_get(&ch0);
-    vec_int_t v_y;
-    v_y = q_vec_int_get(&ch7);
-    pair_vec_int_vec_int_t v_z;
-    v_z.fst = prod(v_x);
-    v_z.snd = v_y;
-    vec_int_t v_aa;
-    v_aa = q_vec_int_get(&ch8);
-    pair_vec_int_vec_int_t v_ba;
-    v_ba.fst = cat(v_z);
-    v_ba.snd = v_aa;
-    vec_int_t v_ca;
-    v_ca = q_vec_int_get(&ch7);
-    pair_vec_int_vec_int_t v_da;
-    v_da.fst = prod(v_x);
-    v_da.snd = v_ca;
-    vec_int_t v_ea;
-    v_ea = q_vec_int_get(&ch9);
-    pair_vec_int_vec_int_t v_fa;
-    v_fa.fst = cat(v_ba);
-    v_fa.snd = v_ea;
-    q_vec_int_put(&ch6, cat(v_fa));
-    return Unit;
+    v_x = q_vec_int_get(&ch7);
+    pair_vec_int_vec_int_t v_y;
+    v_y.fst = v_w;
+    v_y.snd = v_x;
+    vec_int_t v_z;
+    v_z = q_vec_int_get(&ch8);
+    pair_vec_int_vec_int_t v_aa;
+    v_aa.fst = v_z;
+    v_aa.snd = cat(v_y);
+    vec_int_t v_ba;
+    v_ba = q_vec_int_get(&ch9);
+    pair_vec_int_vec_int_t v_ca;
+    v_ca.fst = v_ba;
+    v_ca.snd = cat(v_aa);
+    vec_int_t v_da;
+    v_da = q_vec_int_get(&ch10);
+    pair_vec_int_vec_int_t v_ea;
+    v_ea.fst = v_da;
+    v_ea.snd = cat(v_ca);
+    vec_int_t v_fa;
+    v_fa = q_vec_int_get(&ch11);
+    pair_vec_int_vec_int_t v_ga;
+    v_ga.fst = v_fa;
+    v_ga.snd = cat(v_ea);
+    return cat(v_ga);
 }
 
-unit_t scalarProd_part_2()
-{
-    vec_int_t v_ga;
-    v_ga = q_vec_int_get(&ch1);
-    q_vec_int_put(&ch7, prod(v_ga));
-    q_vec_int_put(&ch7, prod(v_ga));
-    return Unit;
-}
-
-q_vec_int_t ch10 = { 0, 0, 0, { } };
-
-unit_t scalarProd_part_3()
+unit_t parProd_part_1()
 {
     vec_int_t v_ha;
-    v_ha = q_vec_int_get(&ch2);
-    vec_int_t v_ia;
-    v_ia = q_vec_int_get(&ch10);
-    pair_vec_int_vec_int_t v_ja;
-    v_ja.fst = prod(v_ha);
-    v_ja.snd = v_ia;
-    q_vec_int_put(&ch8, cat(v_ja));
-    vec_int_t v_ka;
-    v_ka = q_vec_int_get(&ch10);
-    pair_vec_int_vec_int_t v_la;
-    v_la.fst = prod(v_ha);
-    v_la.snd = v_ka;
+    v_ha = q_vec_int_get(&ch0);
+    q_vec_int_put(&ch11, prod(v_ha));
     return Unit;
 }
 
-unit_t scalarProd_part_4()
+unit_t parProd_part_2()
+{
+    vec_int_t v_ia;
+    v_ia = q_vec_int_get(&ch1);
+    q_vec_int_put(&ch10, prod(v_ia));
+    return Unit;
+}
+
+unit_t parProd_part_3()
+{
+    vec_int_t v_ja;
+    v_ja = q_vec_int_get(&ch2);
+    q_vec_int_put(&ch9, prod(v_ja));
+    return Unit;
+}
+
+unit_t parProd_part_4()
+{
+    vec_int_t v_ka;
+    v_ka = q_vec_int_get(&ch3);
+    q_vec_int_put(&ch8, prod(v_ka));
+    return Unit;
+}
+
+unit_t parProd_part_5()
+{
+    vec_int_t v_la;
+    v_la = q_vec_int_get(&ch4);
+    q_vec_int_put(&ch6, prod(v_la));
+    return Unit;
+}
+
+unit_t parProd_part_6()
 {
     vec_int_t v_ma;
-    v_ma = q_vec_int_get(&ch3);
-    q_vec_int_put(&ch10, prod(v_ma));
-    q_vec_int_put(&ch10, prod(v_ma));
-    return Unit;
-}
-
-q_vec_int_t ch11 = { 0, 0, 0, { } };
-
-unit_t scalarProd_part_5()
-{
-    vec_int_t v_na;
-    v_na = q_vec_int_get(&ch4);
-    vec_int_t v_oa;
-    v_oa = q_vec_int_get(&ch11);
-    pair_vec_int_vec_int_t v_pa;
-    v_pa.fst = prod(v_na);
-    v_pa.snd = v_oa;
-    vec_int_t v_qa;
-    v_qa = q_vec_int_get(&ch11);
-    pair_vec_int_vec_int_t v_ra;
-    v_ra.fst = prod(v_na);
-    v_ra.snd = v_qa;
-    q_vec_int_put(&ch9, cat(v_ra));
-    return Unit;
-}
-
-unit_t scalarProd_part_6()
-{
-    vec_int_t v_sa;
-    v_sa = q_vec_int_get(&ch5);
-    q_vec_int_put(&ch11, prod(v_sa));
-    q_vec_int_put(&ch11, prod(v_sa));
+    v_ma = q_vec_int_get(&ch5);
+    q_vec_int_put(&ch7, prod(v_ma));
     return Unit;
 }
 
 void * fun_thread_1(void * arg)
 {
-    scalarProd_part_1();
+    parProd_part_1();
     return NULL;
 }
 
 void * fun_thread_2(void * arg)
 {
-    scalarProd_part_2();
+    parProd_part_2();
     return NULL;
 }
 
 void * fun_thread_3(void * arg)
 {
-    scalarProd_part_3();
+    parProd_part_3();
     return NULL;
 }
 
 void * fun_thread_4(void * arg)
 {
-    scalarProd_part_4();
+    parProd_part_4();
     return NULL;
 }
 
 void * fun_thread_5(void * arg)
 {
-    scalarProd_part_5();
+    parProd_part_5();
     return NULL;
 }
 
 void * fun_thread_6(void * arg)
 {
-    scalarProd_part_6();
+    parProd_part_6();
     return NULL;
 }
 
-vec_int_t scalarProd(vec_int_t v_ta)
+vec_int_t parProd(vec_int_t v_na)
 {
     pthread_t thread1;
     pthread_t thread2;
@@ -263,5 +245,5 @@ vec_int_t scalarProd(vec_int_t v_ta)
     pthread_create(&thread4, NULL, fun_thread_4, NULL);
     pthread_create(&thread5, NULL, fun_thread_5, NULL);
     pthread_create(&thread6, NULL, fun_thread_6, NULL);
-    return scalarProd_part_0(v_ta);
+    return parProd_part_0(v_na);
 }
