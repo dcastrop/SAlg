@@ -8,11 +8,3 @@ examples/*/*
 !examples/*/*.hs
 !examples/*/main.c
 !examples/*/Makefile
-
-examples/Mergesort/*
-!examples/Mergesort/Mergesort.hs
-!examples/Mergesort/main.c
-!examples/Mergesort/Makefile
-
-examples/bugs/*
-!examples/bugs/*.hs
