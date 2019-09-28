@@ -544,15 +544,14 @@ getChan from to ty = do
 
 mkSendc :: CExpr -> Ident -> [CBlockItem]
 mkSendc ch v =
-  [ CBlockStmt $
+  [ CBlockStmt $ cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
+  , CBlockStmt $
     CWhile (intConst 1) (CCompound [] body undefNode) False undefNode
   ]
   where
     body = map CBlockStmt
-      [ cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
-      , CWhile isFull wait False undefNode
+      [ CWhile isFull wait False undefNode
       , CIf notFull (CCompound [] addToQ undefNode) Nothing undefNode
-      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
       ]
     addToQ = map CBlockStmt
       [ cExpr $ CAssign CAssignOp (cIdx qmem qhd) (cVar v) undefNode
@@ -649,16 +648,15 @@ cLt e1 e2 = CBinary CLeOp e1 e2 undefNode
 mkRecvc :: CExpr -> Ident -> ([CDeclSpec], [CDerivedDeclr]) -> [CBlockItem]
 mkRecvc ch v (tyd, tyq) =
   [ CBlockDecl $ CDecl tyd [(Just vdecl, Nothing, Nothing)] undefNode
+  , CBlockStmt $ cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
   , CBlockStmt $
     CWhile (intConst 1) (CCompound [] body undefNode) False undefNode
   ]
   where
     vdecl = CDeclr (Just v) tyq Nothing [] undefNode
     body = map CBlockStmt
-      [ cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
-      , CWhile isEmpty wait False undefNode
+      [ CWhile isEmpty wait False undefNode
       , CIf notEmpty (CCompound [] getFromQ undefNode) Nothing undefNode
-      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
       ]
     getFromQ = map CBlockStmt
       [ cExpr $ CAssign CAssignOp (cVar v) (cIdx qmem qtl) undefNode

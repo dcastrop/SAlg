@@ -41,7 +41,7 @@ vec_int_t randvec(size_t s){
   in.elems = (int *)calloc(s, sizeof(int));
   in.size = s;
 
-  srand(time(NULL));
+  srand(get_time());
 
   for (int i = 0; i < s; i++) {
     in.elems[i] = (int)rand() % 100;
@@ -88,6 +88,7 @@ long tspec2ms(struct timespec *tv)
 }
 
 int main(int argc, const char *argv[]) {
+
   if (argc <= 1) {
     usage(argv[0]);
   }
@@ -105,13 +106,13 @@ int main(int argc, const char *argv[]) {
   vec_int_t in, out;
   double start, end;
   // Warmup
-  for(int i=0; i<REPETITIONS; i++){
+  for(int i=0; i<10; i++){
     in = randvec(size);
-    out = parMsort0(in);
-  for (int i = 0; i < out.size; i++) {
-    printf("%d ", out.elems[i]);
-  }
-  printf("\n\n");
+    out = parMsort8(in);
+//  for (int i = 0; i < out.size; i++) {
+//    printf("%d ", out.elems[i]);
+//  }
+   printf("%d\n\n", i);
     free(in.elems);
   }
 
