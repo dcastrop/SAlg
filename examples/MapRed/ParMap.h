@@ -20,19 +20,19 @@ void q_vec_int_put(q_vec_int_t *, vec_int_t);
 
 vec_int_t q_vec_int_get(q_vec_int_t *);
 
-typedef enum unit {
-            Unit
-        } unit_t;
-
-vec_int_t prod(vec_int_t);
-
 typedef struct pair_vec_int_vec_int {
             vec_int_t fst; vec_int_t snd;
         } pair_vec_int_vec_int_t;
 
 vec_int_t cat(pair_vec_int_vec_int_t);
 
-vec_int_t scalarProd(vec_int_t);
+typedef enum unit {
+            Unit
+        } unit_t;
+
+vec_int_t prod(vec_int_t);
+
+vec_int_t parProd(vec_int_t);
 
 #endif
 
