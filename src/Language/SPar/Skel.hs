@@ -106,10 +106,11 @@ compileAsLib fpn st f = do
   declareEnv fpn p
   !fns <- mapM (wrapParts fpn) pds
   !av <- freshVar
+  !ov <- freshVar
   !aty <- cTySpec $ domTy f
   !bty <- cTySpec $ codTy f
   newFun (internalIdent fpn, bty) [(av, aty)]
-    $ body fpn av 0 $ zip pds fns
+    $ body fpn av ov bty 0 $ zip pds fns
   newHeaderFun (internalIdent fpn) bty [aty]
   where
     !pds = filter (/= 0) $ domEnvL p
@@ -131,10 +132,23 @@ wrapParts fpn p = do
   pure fn
 
 
-body :: String -> Ident -> PID -> [(PID, Ident)] -> [CBlockItem]
-body fpn av p0 ps = map declThread ps ++ map createThread ps ++ retn
+body :: String
+     -> Ident
+     -> Ident
+     -> ([CDeclSpec], [CDerivedDeclr])
+     -> PID
+     -> [(PID, Ident)]
+     -> [CBlockItem]
+body fpn av ov (oty, otyd) p0 ps
+  = declOut : map declThread ps ++ map createThread ps ++ retn
+  ++ map joinThread ps ++ [CBlockStmt $ CReturn (Just $ cVar ov) undefNode]
   where
-    retn = [ CBlockStmt $ (`CReturn` undefNode) $ Just $
+    declOut = CBlockDecl $ CDecl oty
+              [( Just $ CDeclr (Just ov) otyd Nothing [] undefNode
+               , Nothing
+               , Nothing
+               )] undefNode
+    retn = [ CBlockStmt $ cExpr $ cAssign (cVar ov) $
              CCall (cVar $ internalIdent $ fpn ++ "_part_" ++ show p0)
              [cVar av] undefNode
            ]
@@ -145,6 +159,8 @@ body fpn av p0 ps = map declThread ps ++ map createThread ps ++ retn
       , cVar fn
       , cVar $ internalIdent "NULL"
       ] undefNode
+    joinThread (p, _fn) = CBlockStmt $ cExpr $
+      CCall pthreadJoin [cVar $ threadName p, cVar $ internalIdent "NULL"] undefNode
     declThread (p, _) = CBlockDecl $ CDecl
       [CTypeSpec $ CTypeDef (internalIdent "pthread_t") undefNode]
       [mkThreadDeclr p] undefNode
@@ -153,6 +169,7 @@ body fpn av p0 ps = map declThread ps ++ map createThread ps ++ retn
       , Nothing, Nothing)
     threadName p = internalIdent $ "thread" ++ show p
     pthreadCreate = cVar $ internalIdent "pthread_create"
+    pthreadJoin = cVar $ internalIdent "pthread_join"
 
 printSProc :: CProc a -> String
 printSProc p = printEnv $ unProc p
