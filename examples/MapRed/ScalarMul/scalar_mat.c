@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define REPETITIONS 1
+#define REPETITIONS 50
 
 #define BENCHMARKSEQ(s, f) { \
   time = 0; \
@@ -135,7 +135,13 @@ int main(int argc, const char *argv[]) {
   }
 
   BENCHMARKSEQ("seq", prod)
-  BENCHMARKSEQ("ms0", parProd)
+  BENCHMARKSEQ("1" , parProd1)
+  BENCHMARKSEQ("2" , parProd2)
+  BENCHMARKSEQ("4" , parProd4)
+  BENCHMARKSEQ("8" , parProd8)
+  BENCHMARKSEQ("16", parProd16)
+  BENCHMARKSEQ("32", parProd32)
+  BENCHMARKSEQ("64", parProd64)
 
   // BENCHMARKPAR("ms0", scalarProdInit, scalarProd)
 

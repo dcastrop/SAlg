@@ -31,8 +31,8 @@ parProd :: forall n. (CValProd n [[Int]], CValProd n [Int])
         => [[Int]] :=> [[Int]]
 parProd = cfun $ \x -> catv @n `app` scalarProd @n `app` splitv @n x
 
-parProd0 :: [[Int]] :=> [[Int]]
-parProd0 = parProd @0
+-- parProd0 :: [[Int]] :=> [[Int]]
+-- parProd0 = parProd @0
 
 parProd1 :: [[Int]] :=> [[Int]]
 parProd1 = parProd @1
