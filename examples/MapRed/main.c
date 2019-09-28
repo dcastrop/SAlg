@@ -18,6 +18,7 @@
     start = get_time(); \
     out = f(in); \
     end = get_time(); \
+    free(in.elems); \
     time_diff = end - start; \
     time_old = time; \
     time += (time_diff - time)/(i+1); \
@@ -40,6 +41,7 @@
     start = get_time(); \
     out = f(in); \
     end = get_time(); \
+    free(in.elems); \
     time_diff = end - start; \
     time_old = time; \
     time += (time_diff - time)/(i+1); \
@@ -137,6 +139,7 @@ int main(int argc, const char *argv[]) {
   for(int i=0; i<REPETITIONS; i++){
     in = randvec(size);
     out = prod(in);
+    free(in.elems);
   }
 
   BENCHMARKSEQ("seq", prod)
