@@ -18,7 +18,7 @@
     start = get_time(); \
     out = f(in); \
     end = get_time(); \
-    free(in.elems); \
+    free_mat(in); \
     time_diff = end - start; \
     time_old = time; \
     time += (time_diff - time)/(i+1); \
@@ -41,7 +41,7 @@
     start = get_time(); \
     out = f(in); \
     end = get_time(); \
-    free(in.elems); \
+    free_mat(in); \
     time_diff = end - start; \
     time_old = time; \
     time += (time_diff - time)/(i+1); \
@@ -50,6 +50,13 @@
   printf("\tK: %s\n", s); \
   printf("\t\tmean: %f\n", time); \
   printf("\t\tstddev: %f\n", REPETITIONS<=1? 0: sqrt(var / (REPETITIONS - 1))); \
+}
+
+void free_mat(vec_vec_int_t v){
+  for(int i=0; i<v.size; i++){
+    free(v.elems[i].elems);
+  }
+  free(v.elems);
 }
 
 static inline double get_time()
@@ -124,7 +131,7 @@ int main(int argc, const char *argv[]) {
   for(int i=0; i<REPETITIONS; i++){
     in = randvec(size);
     out = prod(in);
-    free(in.elems);
+    free_mat(in);
   }
 
   BENCHMARKSEQ("seq", prod)

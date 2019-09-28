@@ -1,13 +1,10 @@
 *.swp
 *.swo
 *.o
-.stack-work
+.stack-work*
 SAlg.cabal
 
-examples/Mergesort/*
-!examples/Mergesort/Mergesort.hs
-!examples/Mergesort/main.c
-!examples/Mergesort/Makefile
-
-examples/bugs/*
-!examples/bugs/*.hs
+examples/*/*
+!examples/*/*.hs
+!examples/*/main.c
+!examples/*/Makefile
