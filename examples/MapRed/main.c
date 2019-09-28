@@ -22,7 +22,6 @@
     time_old = time; \
     time += (time_diff - time)/(i+1); \
     var += (time_diff - time) * (time_diff - time_old); \
-    free(in.elems); \
   } \
   printf("\tK: %s\n", s); \
   printf("\t\tmean: %f\n", time); \
@@ -45,7 +44,6 @@
     time_old = time; \
     time += (time_diff - time)/(i+1); \
     var += (time_diff - time) * (time_diff - time_old); \
-    free(in.elems); \
   } \
   printf("\tK: %s\n", s); \
   printf("\t\tmean: %f\n", time); \
@@ -59,30 +57,50 @@ static inline double get_time()
     return t.tv_sec + t.tv_usec*1e-6;
 }
 
-vec_int_t randvec(size_t s){
-  vec_int_t in;
-  in.elems = (int *)calloc(s, sizeof(int));
+vec_vec_int_t randvec(size_t s){
+  vec_vec_int_t in;
+  in.elems = (vec_int_t *)calloc(s, sizeof(vec_int_t));
   in.size = s;
 
   srand(time(NULL));
 
   for (int i = 0; i < s; i++) {
-    in.elems[i] = (int)rand() % 100;
+    in.elems[i].size = s;
+    in.elems[i].elems = (int *)calloc(s, sizeof(int));
+    for(int j = 0; j < s; j++){
+      in.elems[i].elems[j] = (int)rand() % 100;
+    }
   }
 
   return in;
 }
 
 vec_int_t cat(pair_vec_int_vec_int_t in){
-  in.fst.size += in.snd.size;
-  return in.fst;
+  vec_int_t out;
+  out.size = in.fst.size + in.snd.size;
+  out.elems = (int *)malloc(out.size * sizeof(int));
+  memcpy(out.elems, in.fst.elems, in.fst.size);
+  memcpy(out.elems + in.fst.size, in.snd.elems, in.snd.size);
+  free(in.fst.elems);
+  free(in.snd.elems);
+  return out;
 }
 
-vec_int_t prod(vec_int_t v){
+vec_int_t prod(vec_vec_int_t v){
+  vec_int_t out;
+  out.size = v.size;
+  out.elems = (int *) malloc (v.size * sizeof(int));
   for(int i = 0; i < v.size; i++){
-    v.elems[i] *= v.elems[i];
+    out.elems[i] = 1;
+    for (int j = 0; j < v.elems[i].size; j++){
+      out.elems[i] *= v.elems[i].elems[j];
+    }
   }
-  return v;
+  for(int i = 0; i < v.size; i++){
+    free(v.elems[i].elems);
+  }
+  // free(v.elems);
+  return out;
 }
 
 void usage(const char *nm){
@@ -112,17 +130,17 @@ int main(int argc, const char *argv[]) {
   }
 
 
-  vec_int_t in, out;
+  vec_vec_int_t in;
+  vec_int_t out;
   double start, end, time, time_diff, time_old, var;
   // Warmup
   for(int i=0; i<REPETITIONS; i++){
     in = randvec(size);
     out = prod(in);
-    free(in.elems);
   }
 
   BENCHMARKSEQ("seq", prod)
-  BENCHMARKSEQ("ms0", scalarProd)
+  BENCHMARKSEQ("ms0", parProd)
 
   // BENCHMARKPAR("ms0", scalarProdInit, scalarProd)
 
