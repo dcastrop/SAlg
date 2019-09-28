@@ -241,24 +241,24 @@ msg int@(DAlt pc li ri) p
   | otherwise = env
   where
     !ps = participants int
-    env = caseEnv (Set.insert p ps) (msg li p) (msg ri p)
+    !env = caseEnv (Set.insert p ps) (msg li p) (msg ri p)
 msg (DVal pt t) p
   | p Prelude.== pt = Env $! Map.singleton p $! aPar t $! \v -> pure v
   | otherwise = env
   where
-    env = Env $ Map.fromList [(pt, snd), (p, rcv)]
-    snd = aPar t $ \v -> send v p
-    rcv = APar @() $ \_ -> trecv t pt
+    !env = Env $ Map.fromList [(pt, snd), (p, rcv)]
+    !snd = aPar t $ \v -> send v p
+    !rcv = APar @() $ \_ -> trecv t pt
 msg (DTagL l r) p = kleisliEnv (msg l p) env
   where
-    env = Env $ Map.singleton p $! aPar l $! \v -> pure (tinl v r)
+    !env = Env $ Map.singleton p $! aPar l $! \v -> pure (tinl v r)
 msg (DTagR l r) p = kleisliEnv (msg r p) env
   where
-    env = Env $ Map.singleton p $! aPar r $! \v -> pure (tinr l v)
+    !env = Env $ Map.singleton p $! aPar r $! \v -> pure (tinr l v)
 msg i@(DPair l r) p = unionEnvK (split $ Set.singleton p) envL envR
   where
-    envL = kleisliEnv pl (msg l p)
-    envR = kleisliEnv pr (msg r p)
+    !envL = kleisliEnv pl $! msg l p
+    !envR = kleisliEnv pr $! msg r p
     !pl = eproj i L $! partsL i
     !pr = eproj i R $! partsL i
 

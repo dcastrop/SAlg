@@ -292,10 +292,7 @@ red (SS SZ) f x = f x
 red (SS (SS n)) f x =
   case (cvalProd n (Proxy :: Proxy a), cvalProd (div2 n) (Proxy :: Proxy a)) of
     (CDict, CDict) ->
-      let !xr = snd (snd x)
-          !x1 = fst x
-          !x2 = fst (snd x)
-      in f (x1 X.&&& x2) X.&&& red n f xr
+      f (x X.>>> X.fst X.&&& (X.snd X.>>> X.fst)) X.&&& red n f (x X.>>> X.snd X.>>> X.snd)
 
 pfold' :: forall t n a ctx. (CAlg t, CVal a, CVal ctx)
        => SINat n -> (t ctx (a, a) -> t ctx a)

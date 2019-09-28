@@ -243,7 +243,7 @@ partsL d = force ppd `seq` ppd
     pp (DPair l r) !ps = pp l (pp r ps)
 
 participants :: DType a -> Set PID
-participants (DAlt p l r) = pp
+participants (DAlt p l r) = pp `seq` pp
   where
     !pl = participants l
     !pr = participants r
@@ -252,9 +252,12 @@ participants (DAlt p l r) = pp
 participants (DVal p _) = Set.singleton p
 participants (DTagL p _) = participants p
 participants (DTagR _ p) = participants p
-participants (DPair l r) = p
+participants (DPair l r) = p `seq` p
   where
-    !p = participants l `Set.union` participants r
+    !p = pl `Set.union` pr
+    !pl = participants l
+    !pr = participants r
+
 
 ifst :: (CVal a, CVal b) => DType (a, b) -> DType a
 ifst (DVal p (CPair l _)) = DVal p l
@@ -279,12 +282,10 @@ data ATyFn where
 
 projTy :: DType a -> PID -> ATy
 projTy i p
-  | not (p `elem` pri) = ATy CUnit
+  | not (p `Set.member` pri) = ATy CUnit
   where
-    !pri = force prr `seq` prr
-    !prr = partsL i
-    force [] = ()
-    force (x:xs) = x `seq` force xs
+    !pri = prr `seq` prr
+    !prr = participants i
 projTy (DPair l r) p = case (projTy l p, projTy r p) of
                          (ATy ll, ATy rr) -> ATy $! CPair ll rr
 projTy (DTagL i _) p = projTy i p
@@ -355,7 +356,12 @@ join (MIf e kl kr k) = MIf e kl kr $! fmap join k
 join (MRet f) = f
 
 instance CAp t v => Monad (SPar v t) where
-  mv >>= kf = join (pure kf <*> mv)
+  MSnd e p k      >>= kf = MSnd e p $! k >>= kf
+  MRcv p t k      >>= kf = MRcv p t $! \x -> k x >>= kf
+  MRun t a k      >>= kf = MRun t a $! \x -> k x >>= kf
+  MCse e kl kr k  >>= kf = MCse e kl kr $! \x -> k x >>= kf
+  MIf e kl kr k   >>= kf = MIf e kl kr $! \x -> k x >>= kf
+  MRet x          >>= kf = kf x
 
 simpl :: CVal a => CPar a -> CPar a
 simpl (MSnd e p k) = MSnd e p $ simpl k
