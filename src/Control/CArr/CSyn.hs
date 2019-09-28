@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE GADTs #-}
@@ -58,6 +59,7 @@ module Control.CArr.CSyn
   , Int
   , TProd
   , SINat
+  , CValProd
   , pmap
   , smap
   , pfold
@@ -225,7 +227,7 @@ instance IsSing 'Z where sing = SZ
 instance IsSing n => IsSing ('S n) where sing = SS sing
 type SINat (n :: INat) = Sing n
 
-type TProd n a = Prod (FromNat (n-1)) a
+type TProd n a = Prod (FromNat n) a
 
 type family Prod (n :: INat) (a :: *) = r where
   Prod 'Z a = a
@@ -263,11 +265,13 @@ pmap :: forall n t a b ctx.
      -> t ctx (Prod (FromNat n) a) -> t ctx (Prod (FromNat n) b)
 pmap = fmapP' (sing :: SINat (FromNat n)) Proxy Proxy Prelude.True
 
-smap :: forall n t a b ctx.
+smap :: forall n a b t ctx.
         (CAlg t, CVal a, CVal b, CVal ctx, IsSing (FromNat n))
      => (t ctx a -> t ctx b)
      -> t ctx (Prod (FromNat n) a) -> t ctx (Prod (FromNat n) b)
 smap = fmapP' (sing :: SINat (FromNat n)) Proxy Proxy Prelude.False
+
+type CValProd n a = (IsSing (FromNat n), CVal (Prod (FromNat n) a))
 
 --assocL :: (CAlg t, CVal a, CVal b, CVal c) => t (a, (b, c)) ((a, b), c)
 --assocL = cfun Prelude.$ \x -> pair (pair (fst x, fst (snd x)), snd (snd x))
@@ -284,33 +288,35 @@ div2 (SS (SS n)) = SS (div2 n)
 
 data Proxy a = Proxy
 
-red :: forall t a ctx n. (CAlg t, CVal a, CVal ctx)
-    => SINat n -> (t ctx (a, a) -> t ctx a)
-    -> t ctx (Prod n a) -> t ctx (Prod (Div2 n) a)
-red SZ _ x = x
-red (SS SZ) f x = f x
-red (SS (SS n)) f x =
+red :: forall t a n. (CAlg t, CVal a)
+    => SINat n -> t (a, a) a
+    -> t (Prod n a) (Prod (Div2 n) a)
+red SZ _ = X.id
+red (SS SZ) f = f
+red (SS (SS n)) f =
   case (cvalProd n (Proxy :: Proxy a), cvalProd (div2 n) (Proxy :: Proxy a)) of
     (CDict, CDict) ->
-      f (x X.>>> X.fst X.&&& (X.snd X.>>> X.fst)) X.&&& red n f (x X.>>> X.snd X.>>> X.snd)
+      ((X.fst X.&&& (X.snd X.>>> X.fst)) X.>>> f) X.&&& ((X.snd X.>>> X.snd) X.>>> red n f)
 
-pfold' :: forall t n a ctx. (CAlg t, CVal a, CVal ctx)
-       => SINat n -> (t ctx (a, a) -> t ctx a)
-       -> t ctx (Prod n a) -> t ctx a
-pfold' SZ _ z = z
-pfold' (SS SZ) f x = f x
-pfold' n f x =
+pfold' :: forall t n a. (CAlg t, CVal a)
+       => SINat n -> t (a, a) a
+       -> t (Prod n a) a
+pfold' SZ _ = X.id
+pfold' (SS SZ) f = f
+pfold' n f =
   case (cvalProd n (Proxy :: Proxy a), cvalProd dn2 (Proxy :: Proxy a)) of
-    (CDict, CDict) -> let !rd = red n f x
-                      in
-                        pfold' dn2 f rd
+    (CDict, CDict) -> red n f X.>>> pfold' dn2 f
   where
     !dn2 = div2 n
 
 pfold :: forall n t a ctx. (CAlg t, CVal a, CVal ctx, IsSing (FromNat n))
-       => (t ctx (a, a) -> t ctx a)
+       => t (a, a) a
        -> t ctx (Prod (FromNat n) a) -> t ctx a
-pfold = pfold' (sing :: SINat (FromNat n))
+pfold f =
+  case cvalProd n (Proxy :: Proxy a) of
+    CDict -> app (pfold' n f)
+  where
+    n = sing :: SINat (FromNat n)
 
 sfold' :: forall t n a ctx. (CAlg t, CVal a, CVal ctx)
       => SINat n -> (t ctx (a, a) -> t ctx a) -> t ctx (Prod n a) -> t ctx a

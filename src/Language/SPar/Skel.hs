@@ -23,6 +23,7 @@ module Language.SPar.Skel
   , printASkel
   , compileAsLib
   , annotate
+  , lift
   , ($)
   , Semigroup (..)
   , Monoid (..)
