@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define REPETITIONS 50
+#define REPETITIONS 1
 
 #define BENCHMARKSEQ(s, f) { \
   time = 0; \
@@ -26,7 +26,7 @@
   } \
   printf("\tK: %s\n", s); \
   printf("\t\tmean: %f\n", time); \
-  printf("\t\tstddev: %f\n", sqrt(var / (REPETITIONS - 1))); \
+  printf("\t\tstddev: %f\n", REPETITIONS<=1? 0: sqrt(var / (REPETITIONS - 1))); \
 }
 
 
@@ -49,7 +49,7 @@
   } \
   printf("\tK: %s\n", s); \
   printf("\t\tmean: %f\n", time); \
-  printf("\t\tstddev: %f\n", sqrt(var / (REPETITIONS - 1))); \
+  printf("\t\tstddev: %f\n", REPETITIONS<=1? 0: sqrt(var / (REPETITIONS - 1))); \
 }
 
 static inline double get_time()
@@ -77,32 +77,18 @@ vec_vec_int_t randvec(size_t s){
   return in;
 }
 
-vec_int_t cat(pair_vec_int_vec_int_t in){
-  vec_int_t out;
-  out.size = in.fst.size + in.snd.size;
-  out.elems = (int *)malloc(out.size * sizeof(int));
-  memcpy(out.elems, in.fst.elems, in.fst.size);
-  memcpy(out.elems + in.fst.size, in.snd.elems, in.snd.size);
-  free(in.fst.elems);
-  free(in.snd.elems);
-  return out;
+vec_vec_int_t cat(pair_vec_vec_int_vec_vec_int_t in){
+  in.fst.size += in.snd.size;
+  return in.fst;
 }
 
-vec_int_t prod(vec_vec_int_t v){
-  vec_int_t out;
-  out.size = v.size;
-  out.elems = (int *) malloc (v.size * sizeof(int));
+vec_vec_int_t prod(vec_vec_int_t v){
   for(int i = 0; i < v.size; i++){
-    out.elems[i] = 1;
     for (int j = 0; j < v.elems[i].size; j++){
-      out.elems[i] *= v.elems[i].elems[j];
+      v.elems[i].elems[j] *= 10;
     }
   }
-  for(int i = 0; i < v.size; i++){
-    free(v.elems[i].elems);
-  }
-  // free(v.elems);
-  return out;
+  return v;
 }
 
 void usage(const char *nm){
@@ -132,8 +118,7 @@ int main(int argc, const char *argv[]) {
   }
 
 
-  vec_vec_int_t in;
-  vec_int_t out;
+  vec_vec_int_t in, out;
   double start, end, time, time_diff, time_old, var;
   // Warmup
   for(int i=0; i<REPETITIONS; i++){
