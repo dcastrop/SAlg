@@ -207,8 +207,8 @@ vdrop i v = i X.&&& v X.>>> X.vdrop
 vsize :: (CAlg t, CVal ctx, CVal a) => t ctx [a] -> t ctx Int
 vsize v = v X.>>> X.vsize
 
-par :: (CAlg t, CVal ctx, CVal a) => (t ctx a -> t ctx b) -> t ctx a -> t ctx b
-par f x = f (x X.>>> X.newProc)
+par :: (CAlg t, CVal ctx, CVal a) => (Var t ctx a -> t ctx b) -> t ctx a -> t ctx b
+par f x = f (sub X.>>> x X.>>> X.newProc)
 
 (@@) :: (CAlg t, CVal ctx, CVal a) => (t ctx a -> t ctx b) -> Prelude.Integer
      -> t ctx a -> t ctx b
