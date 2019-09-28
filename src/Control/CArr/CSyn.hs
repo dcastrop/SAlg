@@ -54,6 +54,7 @@ module Control.CArr.CSyn
   , Prelude.Num(..)
   , Prelude.Fractional(..)
   , CAlg
+  , CVal
   , X.CArrFix
   , Either
   , Int
@@ -66,6 +67,7 @@ module Control.CArr.CSyn
   , sfold
   , ssplit
   , psplit
+  , splitv
 ) where
 
 import qualified Prelude
@@ -227,6 +229,10 @@ instance IsSing 'Z where sing = SZ
 instance IsSing n => IsSing ('S n) where sing = SS sing
 type SINat (n :: INat) = Sing n
 
+toInt :: SINat n -> Prelude.Integer
+toInt SZ = 0
+toInt (SS n) = 1 Prelude.+ toInt n
+
 type TProd n a = Prod (FromNat n) a
 
 type family Prod (n :: INat) (a :: *) = r where
@@ -348,6 +354,29 @@ psplit = split' Prelude.True (sing :: SINat (FromNat n)) 0
 ssplit :: forall n t a ctx. (CAlg t, CVal a, CVal ctx, IsSing (FromNat n))
       => (t ctx Int -> t ctx a) -> t ctx (Prod (FromNat n) a)
 ssplit = split' Prelude.False (sing :: SINat (FromNat n)) 0
+
+splitv' :: forall t a n. (CAlg t, CVal a)
+        => Bool -> SINat n -> t (Int, [a]) (Prod n [a])
+splitv' b SZ =
+  if b then X.snd X.>>> X.newProc
+  else X.snd
+splitv' b (SS n) =
+  case cvalProd n (Proxy :: Proxy [a]) of
+    CDict ->
+      (if b then X.vtake X.>>> X.newProc else X.vtake)
+      X.&&& (X.fst X.&&& X.vdrop X.>>> splitv' b n)
+
+splitv :: forall n a f ctx. (CValProd n [a], CAlg f, CVal ctx, CVal a)
+       => f ctx [a] -> f ctx (TProd n [a])
+splitv =
+  app ((X.vsize Prelude./ Prelude.fromInteger isn) X.&&& X.id
+       X.>>> splitv' Prelude.False sn)
+  --let takeFun y = vtake sz $ vdrop (y * sz) z in
+  --  ssplit @n takeFun
+  where
+    isn = toInt sn
+    sn = sing :: SINat (FromNat n)
+
 
 type family ToNat (i :: INat) :: Nat where
   ToNat 'Z = 0

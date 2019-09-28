@@ -459,10 +459,18 @@ chanTySpec nm (tl, ql) =
                      , CTypeSpec $ CIntType undefNode] []
       , fld qheadFld [ CTypeSpec $ CIntType undefNode] []
       , fld qtailFld [ CTypeSpec $ CIntType undefNode] []
-      -- , fld qmutexFld [ CTypeSpec $
-      --                   CTypeDef (internalIdent "pthread_mutex_t")
-      --                   undefNode
-      --                 ] []
+      , fld qmutexFld [ CTypeSpec $
+                        CTypeDef (internalIdent "pthread_mutex_t")
+                        undefNode
+                      ] []
+      , fld qfullFld [ CTypeSpec $
+                       CTypeDef (internalIdent "pthread_cond_t")
+                       undefNode
+                     ] []
+      , fld qemptyFld [ CTypeSpec $
+                       CTypeDef (internalIdent "pthread_cond_t")
+                       undefNode
+                     ] []
       , fld qmemFld tl (CArrDeclr [] (CArrSize False qSize) undefNode : ql)
       ]
 
@@ -477,8 +485,14 @@ qheadFld = internalIdent "q_head"
 qtailFld :: Ident
 qtailFld = internalIdent "q_tail"
 
--- qmutexFld :: Ident
--- qmutexFld = internalIdent "q_mutex"
+qmutexFld :: Ident
+qmutexFld = internalIdent "q_mutex"
+
+qfullFld :: Ident
+qfullFld = internalIdent "q_full"
+
+qemptyFld :: Ident
+qemptyFld = internalIdent "q_empty"
 
 qmemFld :: Ident
 qmemFld = internalIdent "q_mem"
@@ -535,37 +549,50 @@ mkSendc ch v =
   ]
   where
     body = map CBlockStmt
-      [ CWhile isFull emptyStat False undefNode
- --     , cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
+      [ cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
+      , CWhile isFull wait False undefNode
       , CIf notFull (CCompound [] addToQ undefNode) Nothing undefNode
- --     , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
+      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
       ]
     addToQ = map CBlockStmt
       [ cExpr $ CAssign CAssignOp (cIdx qmem qhd) (cVar v) undefNode
       , cExpr $ CAssign CAssignOp qhd incIdx undefNode
       , cExpr $ CUnary CPostIncOp qsz undefNode
- --     , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
+      , cExpr $ CCall pthreadMutexSignal [cAddr qempty] undefNode
+      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
       , CReturn Nothing undefNode
       ]
+    wait = CCompound []
+      [ CBlockStmt $ cExpr $ CCall pthreadMutexWait [cAddr qfull, cAddr mutex]
+        undefNode
+      ] undefNode
     incIdx = (qhd `cPlus` intConst 1) `cMod` qSize
     qhd = cMemberAddr ch qheadFld
     qsz = cMemberAddr ch qsizeFld
     qmem = cMemberAddr ch qmemFld
     isFull = cMemberAddr ch qsizeFld `cGeq` qSize
     notFull = cMemberAddr ch qsizeFld `cLt` qSize
-    -- mutex = cMemberAddr ch qmutexFld
+    mutex = cMemberAddr ch qmutexFld
+    qfull = cMemberAddr ch qfullFld
+    qempty = cMemberAddr ch qemptyFld
 
 cIdx :: CExpr -> CExpr -> CExpr
 cIdx e1 e2 = CIndex e1 e2 undefNode
 
---pthreadMutexLock :: CExpr
---pthreadMutexLock = cVar $ internalIdent "pthread_mutex_lock"
---
---pthreadMutexUnlock :: CExpr
---pthreadMutexUnlock = cVar $ internalIdent "pthread_mutex_unlock"
+pthreadMutexLock :: CExpr
+pthreadMutexLock = cVar $ internalIdent "pthread_mutex_lock"
 
-emptyStat :: CStat
-emptyStat = CCompound [] [] undefNode
+pthreadMutexUnlock :: CExpr
+pthreadMutexUnlock = cVar $ internalIdent "pthread_mutex_unlock"
+
+pthreadMutexWait :: CExpr
+pthreadMutexWait = cVar $ internalIdent "pthread_cond_wait"
+
+pthreadMutexSignal :: CExpr
+pthreadMutexSignal = cVar $ internalIdent "pthread_cond_signal"
+
+--emptyStat :: CStat
+--emptyStat = CCompound [] [] undefNode
 
 cGeq :: CExpr -> CExpr -> CExpr
 cGeq e1 e2 = CBinary CGeqOp e1 e2 undefNode
@@ -628,25 +655,32 @@ mkRecvc ch v (tyd, tyq) =
   where
     vdecl = CDeclr (Just v) tyq Nothing [] undefNode
     body = map CBlockStmt
-      [ CWhile isEmpty emptyStat False undefNode
-      -- , cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
+      [ cExpr $ CCall pthreadMutexLock [cAddr mutex] undefNode
+      , CWhile isEmpty wait False undefNode
       , CIf notEmpty (CCompound [] getFromQ undefNode) Nothing undefNode
-      -- , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
+      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
       ]
     getFromQ = map CBlockStmt
       [ cExpr $ CAssign CAssignOp (cVar v) (cIdx qmem qtl) undefNode
       , cExpr $ CAssign CAssignOp qtl incIdx undefNode
       , cExpr $ CUnary CPostDecOp qsz undefNode
-      -- , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
+      , cExpr $ CCall pthreadMutexSignal [cAddr qfull] undefNode
+      , cExpr $ CCall pthreadMutexUnlock [cAddr mutex] undefNode
       , CReturn (Just $ cVar v) undefNode
       ]
+    wait = CCompound []
+      [ CBlockStmt $ cExpr $ CCall pthreadMutexWait [cAddr qempty, cAddr mutex]
+        undefNode
+      ] undefNode
     incIdx = (qtl `cPlus` intConst 1) `cMod` qSize
     qtl = cMemberAddr ch qtailFld
     qsz = cMemberAddr ch qsizeFld
     qmem = cMemberAddr ch qmemFld
     isEmpty = cMemberAddr ch qsizeFld `cLeq` intConst 0
     notEmpty = cMemberAddr ch qsizeFld `cGt` intConst 0
-    --mutex = cMemberAddr ch qmutexFld
+    mutex = cMemberAddr ch qmutexFld
+    qfull = cMemberAddr ch qfullFld
+    qempty = cMemberAddr ch qemptyFld
 
 intConst :: Integer -> CExpr
 intConst i = CConst $ CIntConst (cInteger i) undefNode
