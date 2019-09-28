@@ -1,4 +1,4 @@
-#include "ParMap.h"
+#include "ScalarMulMat.h"
 #include <inttypes.h>
 #include <errno.h>
 #include <string.h>

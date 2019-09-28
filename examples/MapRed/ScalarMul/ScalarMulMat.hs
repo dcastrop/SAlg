@@ -27,8 +27,32 @@ catv :: forall n f a. (CValProd n [a], CAlg f, CVal a)
            => f (TProd n [a]) [a]
 catv = cfun $ \z -> sfold @n (prim "cat" @@ 0) z
 
-parProd :: [[Int]] :=> [[Int]]
-parProd = cfun $ \x -> catv @11 `app` scalarProd @11 `app` splitv @11 x
+parProd :: forall n. CValProd n [Int] => [[Int]] :=> [[Int]]
+parProd = cfun $ \x -> catv @n `app` scalarProd @n `app` splitv @n x
+
+parProd0 :: [[Int]] :=> [[Int]]
+parProd0 = parProd @0
+
+parProd1 :: [[Int]] :=> [[Int]]
+parProd1 = parProd @1
+
+parProd2 :: [[Int]] :=> [[Int]]
+parProd2 = parProd @2
+
+parProd4 :: [[Int]] :=> [[Int]]
+parProd4 = parProd @4
+
+parProd8 :: [[Int]] :=> [[Int]]
+parProd8 = parProd @8
+
+parProd16 :: [[Int]] :=> [[Int]]
+parProd16 = parProd @16
+
+parProd32 :: [[Int]] :=> [[Int]]
+parProd32 = parProd @32
+
+parProd64 :: [[Int]] :=> [[Int]]
+parProd64 = parProd @64
 
 
 --  cfun $ \i ->
