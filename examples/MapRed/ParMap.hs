@@ -20,15 +20,15 @@ import Language.SPar.Skel ( (:=>) )
 --timesBench = cfun $ pmap (psize @32) (prim "sum")
 
 scalarProd :: forall n f. (CValProd n [[Int]], CValProd n [Int], CAlg f)
-           => f (TProd n [[Int]]) (TProd n [Int])
-scalarProd = cfun $ \z -> smap @n @[[Int]] @[Int] (par $ prim "prod") z
+           => f (TProd n [[Int]]) (TProd n [[Int]])
+scalarProd = cfun $ \z -> smap @n @[[Int]] @[[Int]] (par $ prim "prod") z
 
 catv :: forall n f a. (CValProd n [a], CAlg f, CVal a)
            => f (TProd n [a]) [a]
 catv = cfun $ \z -> sfold @n (prim "cat" @@ 0) z
 
-parProd :: [[Int]] :=> [Int]
-parProd = cfun $ \x -> catv @5 `app` scalarProd @5 `app` splitv @5 x
+parProd :: [[Int]] :=> [[Int]]
+parProd = cfun $ \x -> catv @11 `app` scalarProd @11 `app` splitv @11 x
 
 
 --  cfun $ \i ->
