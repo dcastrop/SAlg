@@ -5,6 +5,7 @@
 SAlg.cabal
 
 examples/*/*
+!examples/*/data
 !examples/*/*.hs
 !examples/*/main.c
 !examples/*/Makefile

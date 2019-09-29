@@ -112,7 +112,7 @@ int main(int argc, const char *argv[]) {
 //  for (int i = 0; i < out.size; i++) {
 //    printf("%d ", out.elems[i]);
 //  }
-   printf("%d\n\n", i);
+   //printf("%d\n\n", i);
     free(in.elems);
   }
 
