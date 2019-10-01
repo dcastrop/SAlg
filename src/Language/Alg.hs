@@ -158,6 +158,18 @@ data Alg t where
   Bot  :: Alg t
   Fix  :: (CVal a, CVal b) => (a :-> b -> a :-> b) -> Alg (a -> b)
 
+expensive :: Alg t -> Bool
+expensive Prim{} = True
+expensive VTake{} = True
+expensive VDrop{} = True
+expensive Fix{} = True
+expensive (Ap f x) = expensive (unFun f) || expensive x
+expensive (Abs f) = expensive $ f (BVar 0)
+expensive (Pair l r) = expensive l || expensive r
+expensive (Inl l) = expensive l
+expensive (Inr l) = expensive l
+expensive _ = False
+
 (|<) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
 (|<) = CmpOp Lt
 (|<=) :: (Num a, CVal a) => Alg a -> Alg a -> Alg Bool
@@ -387,7 +399,11 @@ fun :: (CVal a, CVal b) => (Alg a -> Alg b) -> a :-> b
 fun f = Fun $ Abs f
 
 aap :: (CVal a, CVal b) => a :-> b -> Alg a -> Alg b
-aap (Fun (Abs f)) v = f v
+aap f (Pair l r)
+  | expensive l = aap (Fun $ Abs $ \v -> aap f (Pair v r)) l
+  | expensive r = aap (Fun $ Abs $ \v -> aap f (Pair l v)) r
+aap (Fun (Abs f)) v
+  | not (expensive v) = f v
 aap f v = Ap f v
 
 afst :: (CVal a, CVal b) => Alg (a, b) -> Alg a
@@ -404,9 +420,9 @@ apair (Fst (BVar e1)) (Snd (BVar e2))
 apair e1 e2 = Pair e1 e2
 
 acase :: (CVal a, CVal b, CVal c) => Alg (Either a b) -> a :-> c -> b :-> c -> Alg c
-acase (Inl v) f _ = aap f v
-acase (Inr v) _ g = aap g v
-acase (Case v l r) f g = acase v (fun $ \x -> acase (aap l x) f g) (fun $ \x -> acase (aap r x) f g)
+acase (Inl v) f _ = ap f v
+acase (Inr v) _ g = ap g v
+acase (Case v l r) f g = acase v (fun $ \x -> acase (ap l x) f g) (fun $ \x -> acase (ap r x) f g)
 acase (BIf b l r) f g = BIf b (acase l f g) (acase r f g)
 acase v f g = Case v f g
 
@@ -451,7 +467,7 @@ instance CArrCnst (:->) Alg where
 
 instance CCat (:->) where
   id = Fun $ Abs (\v -> v)
-  f . g = Fun $ Abs (\v -> aap f (aap g v))
+  f . g = Fun $ Abs (\v -> ap f (ap g v))
 
 prim :: (CArr t, CVal a, CVal b) => String -> t a b
 prim n = arr n undefined
@@ -478,7 +494,6 @@ instance CArrChoice (:->) where
 
 instance CArrIf (:->) where
   ifThenElse test l r = test &&& id >>> mif >>> l ||| r
-  -- fun $ \v -> BIf (aap test v) (aap l v) (aap r v)
 
 instance (CVal a, CVal b, Num b) => Num (a :-> b) where
   f + g = (f &&& g) >>> (fun $ \v -> afst v + asnd v)
@@ -686,15 +701,18 @@ compileFun :: (CVal a, CVal b)
            -> CGen ASt (CExpr, [CBlockItem])
 compileFun (Abs f) x = compileAlg (f $ CVal x)
 compileFun e@(Prim f _) x = do
+  (rv, d) <- declVar (Ap (Fun e) (CVal x))
   whenM (not <$> isDeclared (internalIdent f)) $ do
     dt <- cTySpec $ domTy $ Fun e
     ct <- cTySpec $ codTy $ Fun e
     newHeaderFun (internalIdent f) ct [dt]
-  pure $ (fx, [])
+  pure $ (rv, d ++ cret rv fx)
   where
     fx = CCall (cVar $ internalIdent f) [x] undefNode
 compileFun (BVar _) _  = error "Panic! Open term"
-compileFun (CVal v) x  = pure (CCall v [x] undefNode, []) -- Recursive calls
+compileFun e@(CVal v) x  = do
+  (rv, d) <- declVar (Ap (Fun e) (CVal x))
+  pure (rv, d ++ cret rv (CCall v [x] undefNode)) -- Recursive calls
 compileFun Bot _ = pure ((CConst (CIntConst (cInteger $ -1) undefNode)),
                          errorAndExit)
 compileFun e@(Fix f) x = do
@@ -713,7 +731,9 @@ compileFun e@(Fix f) x = do
               (fb ++ [CBlockStmt $ CReturn (Just rv) undefNode])
             ustate $ Map.insert (AAlg $ Fun e) (cVar fn)
             pure $ cVar fn
-  pure (CCall fn [x] undefNode, [])
+
+  (rv, d) <- declVar (Ap (Fun e) (CVal x))
+  pure (rv, d ++ cret rv (CCall fn [x] undefNode))
 
 declareFun :: (CVal a, CVal b) => String -> a :-> b -> CGen ASt ()
 declareFun fm f@(Fun (Prim fn _))
