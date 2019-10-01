@@ -58,6 +58,7 @@ module Control.CArr.CSyn
   , X.CArrFix
   , Either
   , Int
+  , Prelude.Double
   , TProd
   , SINat
   , CValProd
@@ -68,6 +69,7 @@ module Control.CArr.CSyn
   , ssplit
   , psplit
   , splitv
+  , pzip
 ) where
 
 import qualified Prelude
@@ -242,19 +244,19 @@ type family Prod (n :: INat) (a :: *) = r where
 data CDict a where
   CDict :: CVal a => CDict a
 
-cvalProd :: CVal a => SINat n -> t a -> CDict (Prod n a)
-cvalProd SZ _ = CDict
-cvalProd (SS m) t = case cvalProd m t of
+cvalProd :: forall a n. CVal a => SINat n -> CDict (Prod n a)
+cvalProd SZ = CDict
+cvalProd (SS m) = case cvalProd @a m of
                     CDict -> CDict
 
-fmapP' :: (CAlg t, CVal a, CVal b, CVal ctx)
+fmapP' :: forall t a b ctx n v. (CAlg t, CVal a, CVal b, CVal ctx)
        => SINat n -> v a -> v b -> Bool
        -> (t ctx a -> t ctx b) -> t ctx (Prod n a) -> t ctx (Prod n b)
 fmapP' SZ _ _ b f x
   | b = f (x X.>>> X.newProc)
   | Prelude.otherwise  = f x
 fmapP' (SS m) tya tyb b f x =
-  case (cvalProd m tya, cvalProd m tyb) of
+  case (cvalProd @a m, cvalProd @b m) of
     (CDict, CDict) ->
       let fx = if b then f (fst x X.>>> X.newProc)
                else f (fst x)
@@ -300,7 +302,7 @@ red :: forall t a n. (CAlg t, CVal a)
 red SZ _ = X.id
 red (SS SZ) f = f
 red (SS (SS n)) f =
-  case (cvalProd n (Proxy :: Proxy a), cvalProd (div2 n) (Proxy :: Proxy a)) of
+  case (cvalProd @a n, cvalProd @a (div2 n)) of
     (CDict, CDict) ->
       ((X.fst X.&&& (X.snd X.>>> X.fst)) X.>>> f) X.&&& ((X.snd X.>>> X.snd) X.>>> red n f)
 
@@ -310,7 +312,7 @@ pfold' :: forall t n a. (CAlg t, CVal a)
 pfold' SZ _ = X.id
 pfold' (SS SZ) f = f
 pfold' n f =
-  case (cvalProd n (Proxy :: Proxy a), cvalProd dn2 (Proxy :: Proxy a)) of
+  case (cvalProd @a n, cvalProd @a dn2) of
     (CDict, CDict) -> red n f X.>>> pfold' dn2 f
   where
     !dn2 = div2 n
@@ -319,7 +321,7 @@ pfold :: forall n t a ctx. (CAlg t, CVal a, CVal ctx, IsSing (FromNat n))
        => t (a, a) a
        -> t ctx (Prod (FromNat n) a) -> t ctx a
 pfold f =
-  case cvalProd n (Proxy :: Proxy a) of
+  case cvalProd @a n of
     CDict -> app (pfold' n f)
   where
     n = sing :: SINat (FromNat n)
@@ -328,7 +330,7 @@ sfold' :: forall t n a ctx. (CAlg t, CVal a, CVal ctx)
       => SINat n -> (t ctx (a, a) -> t ctx a) -> t ctx (Prod n a) -> t ctx a
 sfold' SZ _  x = x
 sfold' (SS n) f x =
-  case (cvalProd n (Proxy :: Proxy a)) of
+  case cvalProd @a n of
     CDict -> f (pair (fst x, sfold' n f (snd x)))
 
 sfold :: forall n t a ctx. (CAlg t, CVal a, CVal ctx, IsSing (FromNat n))
@@ -341,7 +343,7 @@ split' b SZ i g =
   if b then g (Prelude.fromInteger i) X.>>> X.newProc
   else g (Prelude.fromInteger i)
 split' b (SS n) i g =
-  case (cvalProd n (Proxy :: Proxy a)) of
+  case cvalProd @a n of
     CDict ->
       let gi = if b then g (Prelude.fromInteger i) X.>>> X.newProc
                else g (Prelude.fromInteger i)
@@ -361,7 +363,7 @@ splitv' b SZ =
   if b then X.snd X.>>> X.newProc
   else X.snd
 splitv' b (SS n) =
-  case cvalProd n (Proxy :: Proxy [a]) of
+  case cvalProd @[a] n of
     CDict ->
       (if b then X.vtake X.>>> X.newProc else X.vtake)
       X.&&& (X.fst X.&&& X.vdrop X.>>> splitv' b n)
@@ -377,6 +379,22 @@ splitv =
     isn = toInt sn
     sn = sing :: SINat (FromNat n)
 
+pzip' :: forall a b n f. (CAlg f, CVal a, CVal b)
+       => SINat n -> f (Prod n a, Prod n b) (Prod n (a, b))
+pzip' SZ = X.id
+pzip' (SS n) =
+  case (cvalProd @a n, cvalProd @b n, cvalProd @(a, b) n) of
+    (CDict, CDict, CDict) ->
+      ((X.fst X.>>> X.fst) X.&&& (X.snd X.>>> X.fst)) X.&&&
+      ((X.fst X.>>> X.snd) X.&&& (X.snd X.>>> X.snd) X.>>> pzip' @a @b n)
+
+pzip :: forall a b n f ctx.
+        ( CValProd n a, CValProd n b, CValProd n (a, b)
+        , CAlg f, CVal a, CVal b, CVal ctx)
+     => f ctx (TProd n a) -> f ctx (TProd n b) -> f ctx (TProd n (a, b))
+pzip l r = (l X.&&& r) X.>>> pzip' @a @b sn
+  where
+    sn = sing :: SINat (FromNat n)
 
 type family ToNat (i :: INat) :: Nat where
   ToNat 'Z = 0
