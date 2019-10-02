@@ -8,7 +8,8 @@ module Quicksort where
 import Control.CArr.CSyn
 import Language.SPar.Skel ( (:=>) )
 
-filter :: forall f ctx. (CAlg f, CVal ctx) => f ctx [Int] -> f ctx ([Int], [Int])
+filter :: forall f ctx. (CAlg f, CVal ctx)
+       => Expr f ctx [Int] -> Expr f ctx ([Int], [Int])
 filter = prim "filter"
 
 qsort :: forall f. (CAlg f, CArrFix f) => Int -> f [Int] [Int]
