@@ -14,14 +14,21 @@ import Control.CArr.CSyn
 --timesBench :: CAlg f => f (TProd 32 [Int]) (TProd 32 [Int])
 --timesBench = cfun $ pmap (psize @32) (prim "sum")
 
-dotProd :: CAlg f => f ([Double],[Double]) Double
-dotProd = cfun $ \x ->
-  vlet (vsize (fst x) / 4) $ \sz' ->
+dotProdN :: forall f n. CAlg f => SINat n -> f ([Double],[Double]) Double
+dotProdN i = cfun $ \x ->
+  vlet (vsize (fst x) / toInt i) $ \sz' ->
   if sz' == 0 then
     prim "dot" x
-  else let takeFun y = pair ( vtake sz' $ vdrop (y * sz') $ fst x
-                            , vtake sz' $ vdrop (y * sz') $ snd x ) in
-    vlet (ssplit @3 takeFun) $ \z ->
-    vlet (smap @3 (\s -> par (prim "dot") s) z) $ \t ->
-    pfold @3 (cfun $ \s -> fst s + snd s) t
-    -- pfold @3 (prim "sum") t
+  else
+    let takeFun y = pair ( vtake sz' $ vdrop (y * sz') $ fst x
+                         , vtake sz' $ vdrop (y * sz') $ snd x )
+    in vlet (ssplit i takeFun) $
+       \z -> vlet (smap i (par dot) z) $
+             \t -> pfold i (cfun $ \s -> fst s + snd s) t
+  where
+    dot :: Expr f ctx ([Double], [Double]) -> Expr f ctx Double
+    dot = prim "dot"
+
+
+dotProd :: CAlg f => f ([Double],[Double]) Double
+dotProd = withSize 32 $ dotProdN
