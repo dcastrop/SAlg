@@ -8,6 +8,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Control.CArr
   ( CArr (..)
+  , prim
   , CVar (..)
   , CAp (..)
   , CArrCnst(..)
@@ -40,6 +41,9 @@ class (CVar v, CArr f) => CAp f v where
 
 class CAp t v => CArrCnst t v where
   const :: (CVal a, CVal b) => v b -> t a b
+
+prim :: (CVal a, CVal b, CArr t) => String -> t a b
+prim s = arr s undefined
 
 class CCat t => CArr t where
   arr :: (CVal a, CVal b) => String -> (a -> b) -> t a b

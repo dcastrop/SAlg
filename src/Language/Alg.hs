@@ -18,6 +18,8 @@ module Language.Alg
   ( module Data.C
   , AAlg(..)
   , Alg (..)
+  , closeAlg
+  , fbvs
   , CAp (..)
   , CVar (..)
   , (:->)(..)
@@ -57,6 +59,8 @@ import Data.C
 import Data.Ratio ( numerator, denominator )
 import Data.Map.Strict ( Map )
 import qualified Data.Map.Strict as Map
+import Data.Set ( Set )
+import qualified Data.Set as Set
 import Control.CCat
 import Control.CArr
 import Control.Monad.CGen
@@ -157,6 +161,80 @@ data Alg t where
 
   Bot  :: Alg t
   Fix  :: (CVal a, CVal b) => (a :-> b -> a :-> b) -> Alg (a -> b)
+
+closeAlg :: forall a b. (Typeable a, Typeable b)
+         => Integer -> Alg a -> Alg b -> Alg a
+closeAlg l  e@(BVar  x    ) a =
+  case eqTypeRep (typeRep :: TypeRep a) (typeRep :: TypeRep b) of
+    Just HRefl | l Prelude.== x -> a
+    _ -> e
+closeAlg l  (BIf   b x y) a =
+  BIf (closeAlg l b a) (closeAlg l x a) (closeAlg l y a)
+closeAlg l  (UnOp  o x  ) a =
+  UnOp o (closeAlg l x a)
+closeAlg l  (BinOp o x y) a =
+  BinOp o (closeAlg l x a) (closeAlg l y a)
+closeAlg l  (CmpOp o x y) a =
+  CmpOp o (closeAlg l x a) (closeAlg l y a)
+closeAlg l  (Ap    f x  ) a =
+  Ap (Fun $ closeAlg l (unFun f) a) (closeAlg l x a)
+closeAlg l  (Abs   x    ) a =
+  Abs $ \v -> closeAlg l (x v) a
+closeAlg l  (Fst   x    ) a =
+  Fst $ closeAlg l x a
+closeAlg l  (Snd   x    ) a =
+  Snd $ closeAlg l x a
+closeAlg l  (Pair  x y  ) a =
+  Pair (closeAlg l x a) (closeAlg l y a)
+closeAlg l  (Inl   x    ) a =
+  Inl $ closeAlg l x a
+closeAlg l  (Inr   x    ) a =
+  Inr $ closeAlg l x a
+closeAlg l  (Case  e x y) a =
+  Case (closeAlg l e a) (Fun $ closeAlg l (unFun x) a) (Fun $ closeAlg l (unFun y) a)
+closeAlg l  (Vec   i x  ) a =
+  Vec (Fun $ closeAlg l (unFun i) a) (closeAlg l x a)
+closeAlg l  (VLit  x    ) a =
+  VLit $ map (flip (closeAlg l) a) x
+closeAlg l  (Proj  i x  ) a =
+  Proj (closeAlg l i a) (closeAlg l x a)
+closeAlg l  (VLen  x    ) a =
+  VLen (closeAlg l x a)
+closeAlg l  (VTake i x  ) a =
+  VTake (closeAlg l i a) (closeAlg l x a)
+closeAlg l  (VDrop i x  ) a =
+  VDrop (closeAlg l i a) (closeAlg l x a)
+closeAlg _  e@Fix {} _ = e
+closeAlg _  e@Lit {} _ = e
+closeAlg _  e@Prim{} _ = e
+closeAlg _  e@Bot {} _ = e
+closeAlg _  e@CVal{} _ = e
+
+fbvs :: Alg a -> Set Integer
+fbvs (BVar  x    ) = Set.singleton x
+fbvs (BIf   b x y) = fbvs b `Set.union` fbvs x `Set.union` fbvs y
+fbvs (UnOp  _ x  ) = fbvs x
+fbvs (BinOp _ x y) = fbvs x `Set.union` fbvs y
+fbvs (CmpOp _ x y) = fbvs x `Set.union` fbvs y
+fbvs (Ap    f x  ) = fbvs (unFun f) `Set.union` fbvs x
+fbvs (Abs   x    ) = fbvs (x Bot)
+fbvs (Fst   x    ) = fbvs x
+fbvs (Snd   x    ) = fbvs x
+fbvs (Pair  x y  ) = fbvs x `Set.union` fbvs y
+fbvs (Inl   x    ) = fbvs x
+fbvs (Inr   x    ) = fbvs x
+fbvs (Case  e x y) = fbvs e `Set.union` fbvs (unFun x) `Set.union` fbvs (unFun y)
+fbvs (Vec   i x  ) = fbvs (unFun i) `Set.union` fbvs x
+fbvs (VLit  x    ) = Set.unions $ map fbvs x
+fbvs (Proj  i x  ) = fbvs i `Set.union` fbvs x
+fbvs (VLen  x    ) = fbvs x
+fbvs (VTake i x  ) = fbvs i `Set.union` fbvs x
+fbvs (VDrop i x  ) = fbvs i `Set.union` fbvs x
+fbvs Fix {}      = Set.empty -- FIXME: recursive functions must be closed!
+fbvs Lit {}      = Set.empty
+fbvs Prim{}      = Set.empty
+fbvs Bot {}      = Set.empty
+fbvs CVal{}      = Set.empty
 
 expensive :: Alg t -> Bool
 expensive Prim{} = True
@@ -468,9 +546,6 @@ instance CArrCnst (:->) Alg where
 instance CCat (:->) where
   id = Fun $ Abs (\v -> v)
   f . g = Fun $ Abs (\v -> ap f (ap g v))
-
-prim :: (CArr t, CVal a, CVal b) => String -> t a b
-prim n = arr n undefined
 
 instance CArr (:->) where
   arr n v = Fun $ Prim n v
