@@ -126,41 +126,41 @@ data CmpOp = Le | Lt | Ge | Gt | Eq
   deriving (Eq, Ord)
 
 data Alg t where
-  Lit  :: CVal t => t -> Alg t
-  Prim :: String -> t -> Alg t
-  BVar :: Integer -> Alg t
-  CVal :: CExpr -> Alg t -- ^ Internal use only
+  Lit  :: CVal t => !t -> Alg t
+  Prim :: !String -> t -> Alg t
+  BVar :: !Integer -> Alg t
+  CVal :: !CExpr -> Alg t -- ^ Internal use only
 
   -- Bool funcs
-  BIf  :: CVal a => Alg Bool -> Alg a -> Alg a -> Alg a
+  BIf  :: CVal a => !(Alg Bool) -> !(Alg a) -> !(Alg a) -> Alg a
 
   -- Num functions
-  UnOp :: (Num a, CVal a) => UnOp -> Alg a -> Alg a
-  BinOp :: (Num a, CVal a) => BinOp -> Alg a -> Alg a -> Alg a
-  CmpOp :: (Num a, CVal a) => CmpOp -> Alg a -> Alg a -> Alg Bool
+  UnOp :: (Num a, CVal a)  => !UnOp  -> !(Alg a) -> Alg a
+  BinOp :: (Num a, CVal a) => !BinOp -> !(Alg a) -> !(Alg a) -> Alg a
+  CmpOp :: (Num a, CVal a) => !CmpOp -> !(Alg a) -> !(Alg a) -> Alg Bool
 
   -- First order
-  Ap   :: (CVal a, CVal b) => a :-> b -> Alg a -> Alg b
-  Abs  :: (CVal a, CVal b) => (Alg a -> Alg b) -> Alg (a -> b)
+  Ap   :: (CVal a, CVal b) => !(a :-> b) -> !(Alg a) -> Alg b
+  Abs  :: (CVal a, CVal b) => !(Alg a -> Alg b) -> Alg (a -> b)
 
-  Fst  :: (CVal a, CVal b) => Alg (a, b) -> Alg a
-  Snd  :: (CVal a, CVal b) => Alg (a, b) -> Alg b
-  Pair :: (CVal a, CVal b) => Alg a -> Alg b -> Alg (a, b)
+  Fst  :: (CVal a, CVal b) => !(Alg (a, b)) -> Alg a
+  Snd  :: (CVal a, CVal b) => !(Alg (a, b)) -> Alg b
+  Pair :: (CVal a, CVal b) => !(Alg a) -> !(Alg b) -> Alg (a, b)
 
-  Inl  :: (CVal a, CVal b) => Alg a -> Alg (Either a b)
-  Inr  :: (CVal a, CVal b) => Alg b -> Alg (Either a b)
+  Inl  :: (CVal a, CVal b) => !(Alg a) -> Alg (Either a b)
+  Inr  :: (CVal a, CVal b) => !(Alg b) -> Alg (Either a b)
   Case :: (CVal a, CVal b, CVal c)
-       => Alg (Either a b) -> a :-> c -> b :-> c -> Alg c
+       => !(Alg (Either a b)) -> !(a :-> c) -> !(b :-> c) -> Alg c
 
-  Vec  :: CVal a => Int :-> a -> Alg Int -> Alg [a]
-  VLit :: CVal a => [Alg a] -> Alg [a] -- Static initialization
-  Proj :: CVal a => Alg Int -> Alg [a] -> Alg a
-  VLen :: CVal a => Alg [a] -> Alg Int
-  VTake :: CVal a => Alg Int -> Alg [a] -> Alg [a]
-  VDrop :: CVal a => Alg Int -> Alg [a] -> Alg [a]
+  Vec  :: CVal a => !(Int :-> a) -> !(Alg Int) -> Alg [a]
+  VLit :: CVal a => ![Alg a] -> Alg [a] -- Static initialization
+  Proj :: CVal a => !(Alg Int) -> !(Alg [a]) -> Alg a
+  VLen :: CVal a => !(Alg [a]) -> Alg Int
+  VTake :: CVal a => !(Alg Int) -> !(Alg [a]) -> Alg [a]
+  VDrop :: CVal a => !(Alg Int) -> !(Alg [a]) -> Alg [a]
 
   Bot  :: Alg t
-  Fix  :: (CVal a, CVal b) => (a :-> b -> a :-> b) -> Alg (a -> b)
+  Fix  :: (CVal a, CVal b) => !(a :-> b -> a :-> b) -> Alg (a -> b)
 
 closeAlg :: forall a b. (Typeable a, Typeable b)
          => Integer -> Alg a -> Alg b -> Alg a
@@ -639,7 +639,7 @@ compileAlg e
   | getTy e Prelude.== ECUnit = pure (cVar cUnit, [])
 compileAlg (Lit l) = (,[]) <$> cVal l
 compileAlg (Prim v _) = pure (cVar $ internalIdent v, [])
-compileAlg (BVar _) = error "Panic! Cannot find open term!"
+compileAlg (BVar i) = error $ "Panic! Cannot find open term! " ++ show i
 compileAlg (CVal v) = pure (v, [])
 compileAlg (BIf b x y) = do
   (rv, dv) <- declVar x

@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define REPETITIONS 50
+#define REPETITIONS 1
 
 #define BENCHMARKSEQ(s, f) { \
   time = 0; \
@@ -52,7 +52,7 @@
   printf("\t\tstddev: %f\n", REPETITIONS<=1? 0: sqrt(var / (REPETITIONS - 1))); \
 }
 
-void free_mat(vec_vec_int_t v){
+void free_mat(vec_vec_double_t v){
   for(int i=0; i<v.size; i++){
     free(v.elems[i].elems);
   }
@@ -66,33 +66,33 @@ static inline double get_time()
     return t.tv_sec + t.tv_usec*1e-6;
 }
 
-vec_vec_int_t randvec(size_t s){
-  vec_vec_int_t in;
-  in.elems = (vec_int_t *)calloc(s, sizeof(vec_int_t));
+vec_vec_double_t randvec(size_t s){
+  vec_vec_double_t in;
+  in.elems = (vec_double_t *)calloc(s, sizeof(vec_double_t));
   in.size = s;
 
   srand(time(NULL));
 
   for (int i = 0; i < s; i++) {
     in.elems[i].size = s;
-    in.elems[i].elems = (int *)calloc(s, sizeof(int));
+    in.elems[i].elems = (double *)calloc(s, sizeof(double));
     for(int j = 0; j < s; j++){
-      in.elems[i].elems[j] = (int)rand() % 100;
+      in.elems[i].elems[j] = (double)rand();
     }
   }
 
   return in;
 }
 
-vec_vec_int_t cat(pair_vec_vec_int_vec_vec_int_t in){
+vec_vec_double_t cat(pair_vec_vec_double_vec_vec_double_t in){
   in.fst.size += in.snd.size;
   return in.fst;
 }
 
-vec_vec_int_t prod(vec_vec_int_t v){
+vec_vec_double_t prod(vec_vec_double_t v){
   for(int i = 0; i < v.size; i++){
     for (int j = 0; j < v.elems[i].size; j++){
-      v.elems[i].elems[j] *= 10;
+      v.elems[i].elems[j] *= sqrt(v.elems[i].elems[j]);
     }
   }
   return v;
@@ -125,7 +125,7 @@ int main(int argc, const char *argv[]) {
   }
 
 
-  vec_vec_int_t in, out;
+  vec_vec_double_t in, out;
   double start, end, time, time_diff, time_old, var;
   // Warmup
   for(int i=0; i<REPETITIONS; i++){
@@ -137,6 +137,7 @@ int main(int argc, const char *argv[]) {
   BENCHMARKSEQ("seq", prod)
   BENCHMARKSEQ("1" , parProd1)
   BENCHMARKSEQ("2" , parProd2)
+  BENCHMARKSEQ("3" , parProd3)
   BENCHMARKSEQ("4" , parProd4)
   BENCHMARKSEQ("8" , parProd8)
   BENCHMARKSEQ("16", parProd16)

@@ -74,6 +74,8 @@ module Control.CArr.CSyn
   , sfold
   , ssplit
   , psplit
+  , psplitv
+  , ssplitv
   , splitv
   , pzip
   , withSize
@@ -81,9 +83,11 @@ module Control.CArr.CSyn
   , Tree
   -- , tsplit
   , zipTree
-  , cdictTree
-  , withCDict
+
   , CDict
+  , cdictTree
+  , cdictProd
+  , withCDict
 ) where
 
 import qualified Prelude
@@ -358,9 +362,9 @@ type family Prod (n :: INat) (a :: *) = r where
 data CDict a where
   CDict :: CVal a => CDict a
 
-cvalProd :: forall a n. CVal a => SINat n -> CDict (Prod n a)
-cvalProd SZ = CDict
-cvalProd (SS m) = case cvalProd @a m of
+cdictProd :: forall a n. CVal a => SINat n -> CDict (Prod n a)
+cdictProd SZ = CDict
+cdictProd (SS m) = case cdictProd @a m of
                     CDict -> CDict
 
 fmapP' :: forall t a b ctx n v. (CAlg t, CVal a)
@@ -371,7 +375,7 @@ fmapP' SZ _ _ b f x
   | b = f (x >>> Expr X.newProc)
   | Prelude.otherwise  = f x
 fmapP' (SS m) tya tyb b f x =
-  case cvalProd @a m of
+  case cdictProd @a m of
     CDict ->
       let fx@Expr{} = if b then f (fst x >>> Expr X.newProc)
                       else f (fst x)
@@ -382,7 +386,7 @@ fmapP' (SS m) tya tyb b f x =
 --fmapPIx SZ _ _ = const unit
 --fmapPIx (SS m) f k = f k *** fmapPIx m f (k+1)
 
-pmap :: forall n t a b ctx.
+pmap :: forall a b n t ctx.
         (CAlg t, CVal a)
      => SINat n
      -> (Expr t ctx a -> Expr t ctx b)
@@ -423,7 +427,7 @@ red :: forall t a n. CAlg t
 red SZ Expr{} = Expr X.id
 red (SS SZ) f = f
 red (SS (SS n)) f@Expr{} =
-  case (cvalProd @a n, cvalProd @a (div2 n)) of
+  case (cdictProd @a n, cdictProd @a (div2 n)) of
     (CDict, CDict) ->
       ((ffst &&& (fsnd >>> ffst)) >>> f) &&& ((fsnd >>> fsnd) >>> red n f)
   where
@@ -438,7 +442,7 @@ pfold' :: forall t n a. CAlg t
 pfold' SZ Expr{} = Expr X.id
 pfold' (SS SZ) f = f
 pfold' n f@Expr{} =
-  case (cvalProd @a n, cvalProd @a dn2) of
+  case (cdictProd @a n, cdictProd @a dn2) of
     (CDict, CDict) -> red n f >>> pfold' dn2 f
   where
     !dn2 = div2 n
@@ -453,7 +457,7 @@ sfold :: forall t n a ctx. (CAlg t, CVal a)
       -> Expr t ctx (Prod n a) -> Expr t ctx a
 sfold SZ _  x = x
 sfold (SS n) f x =
-  case cvalProd @a n of
+  case cdictProd @a n of
     CDict -> f (pair (fst x, sfold n f (snd x)))
 
 --sfold :: forall n t a ctx. (CAlg t, CVal a, CVal ctx, IsSing (FromNat n))
@@ -490,26 +494,41 @@ splitv' b SZ =
   if b then X.snd X.>>> X.newProc
   else X.snd
 splitv' b (SS n) =
-  case cvalProd @[a] n of
+  case cdictProd @[a] n of
     CDict ->
       (if b then X.vtake X.>>> X.newProc else X.vtake)
-      X.&&& (X.fst X.&&& X.vdrop X.>>> splitv' b n)
+      X.&&& ((X.fst X.&&& X.vdrop) X.>>> splitv' b n)
+
+psplitv :: forall a t n. (CAlg t, CVal a)
+        => SINat n -> t [a] (Prod n [a])
+psplitv n =
+  case cdictProd @[a] n of
+    CDict -> (X.vsize Prelude./ (Prelude.fromInteger isn)) X.&&& X.id
+             X.>>> splitv' Prelude.True n
+  where
+    isn :: Prelude.Integer
+    isn = 1 Prelude.+ toInt n
+
+ssplitv :: forall a t n. (CAlg t, CVal a)
+        => SINat n -> t [a] (Prod n [a])
+ssplitv n =
+  case cdictProd @[a] n of
+    CDict -> (X.vsize Prelude./ (Prelude.fromInteger isn)) X.&&& X.id
+             X.>>> splitv' Prelude.False n
+  where
+    isn :: Prelude.Integer
+    isn = 1 Prelude.+ toInt n
 
 splitv :: forall n a f ctx. (CAlg f, CVal a, IsSing n)
        => SINat n -> Expr f ctx [a] -> Expr f ctx (Prod n [a])
 splitv n x@Expr{} =
-  case cvalProd @[a] n of
-    CDict -> app ((X.vsize Prelude./ Prelude.fromInteger isn) X.&&& X.id
-                  X.>>> splitv' Prelude.False n) x
-  where
-    isn :: Prelude.Integer
-    isn = toInt n
+  withCDict (cdictProd @[a] n) Prelude.$ app (ssplitv n) x
 
 pzip' :: forall a b n f. (CAlg f, CVal a, CVal b)
        => SINat n -> f (Prod n a, Prod n b) (Prod n (a, b))
 pzip' SZ = X.id
 pzip' (SS n) =
-  case (cvalProd @a n, cvalProd @b n, cvalProd @(a, b) n) of
+  case (cdictProd @a n, cdictProd @b n, cdictProd @(a, b) n) of
     (CDict, CDict, CDict) ->
       ((X.fst X.>>> X.fst) X.&&& (X.snd X.>>> X.fst)) X.&&&
       ((X.fst X.>>> X.snd) X.&&& (X.snd X.>>> X.snd) X.>>> pzip' @a @b n)
@@ -519,7 +538,7 @@ pzip :: forall a b n f ctx. (CAlg f, CVal a, CVal b)
      -> Expr f ctx (Prod n a) -> Expr f ctx (Prod n b)
      -> Expr f ctx (Prod n (a, b))
 pzip sn l r =
-  case (cvalProd @a sn, cvalProd @b sn, cvalProd @(a,b) sn) of
+  case (cdictProd @a sn, cdictProd @b sn, cdictProd @(a,b) sn) of
     (CDict, CDict, CDict) -> (l &&& r) >>> Expr (pzip' @a @b sn)
 
 type family ToNat (i :: INat) :: Nat where
