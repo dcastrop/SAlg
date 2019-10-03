@@ -363,6 +363,48 @@ instance CAp t v => Monad (SPar v t) where
   MIf e kl kr k   >>= kf = MIf e kl kr $! \x -> k x >>= kf
   MRet x          >>= kf = kf x
 
+earlySend :: CVal a => Integer -> CPar a -> CPar a
+earlySend l (MSnd e p k) = MSnd e p $ earlySend l k
+earlySend l (MRcv p t k) =
+  case earlySend (l+1) (k $ BVar l) of
+    MSnd e p' ks ->
+      if not (l `Set.member` fbvs e)
+      then MSnd e p' (earlySend l $ MRcv p t $ close l ks)
+      else MRcv p t (close l $ MSnd e p' ks)
+    MRun f a ks ->
+      if not (l `Set.member` fbvs a)
+      then MRun f a $ \ta -> earlySend l $ MRcv p t $ close l $ ks ta
+      else MRcv p t (close l $ MRun f a ks)
+    k' -> MRcv p t $ close l k'
+earlySend l (MRun t a k) =
+  case earlySend (l+1) (k $ BVar l) of
+    MSnd e p' ks ->
+      if not (l `Set.member` fbvs e)
+      then MSnd e p' $ earlySend l $ MRun t a $ close l ks
+      else MRun t a (close l $ MSnd e p' ks)
+    k' -> MRun t a $ close l k'
+earlySend l (MCse e kl kr k) =
+  MCse e (\x -> earlySend l (kl x)) (\x -> earlySend l (kr x))
+  (\x -> earlySend l (k x))
+earlySend l (MIf e kl kr k) =
+  MIf e (earlySend l kl) (earlySend l kr)
+  (\x -> earlySend l (k x))
+earlySend _ f@MRet{} = f
+
+close :: (CVal a, CVal b) => Integer -> CPar a -> Alg b -> CPar a
+close i (MRet e) = \x -> MRet (closeAlg i e x)
+close i (MIf e kl kr k) = \x ->
+  MIf (closeAlg i e x) (close i kl x) (close i kr x) (\y -> close i (k y) x)
+close i (MCse e kl kr k) = \x ->
+  MCse (closeAlg i e x) (\y -> close i (kl y) x)
+  (\y -> close i (kr y) x) (\y -> close i (k y) x)
+close i (MRun t a k) = \x ->
+  MRun t (closeAlg i a x) (\y -> close i (k y) x)
+close i (MRcv p a k) = \x ->
+  MRcv p a (\y -> close i (k y) x)
+close i (MSnd e p k) = \x ->
+  MSnd (closeAlg i e x) p $ close i k x
+
 simpl :: CVal a => CPar a -> CPar a
 simpl (MSnd e p k) = MSnd e p $ simpl k
 simpl (MRcv p t k) = MRcv p t $ \x -> simpl (k x)
@@ -396,7 +438,7 @@ declareParFun pn p f
     !cty = codTy f
 
 codeGen :: CVal a => PID -> CPar a -> CGen ASt (CExpr, [CBlockItem])
-codeGen self = cgen
+codeGen self = cgen . earlySend 0
   where
     cgen :: forall a. CVal a => CPar a -> CGen ASt (CExpr, [CBlockItem])
     cgen (MSnd e@(CVal iv)  p  k) = do

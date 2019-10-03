@@ -22,7 +22,7 @@
 {- LANGUAGE GeneralizedNewtypeDeriving #-}
 module Control.CArr.CSyn
   ( Var
-  , Expr
+  , Expr(..)
   , (:<:)(..)
   , (X..)
   , vlet
@@ -63,8 +63,9 @@ module Control.CArr.CSyn
   , Prelude.Integer
   , Prod
   , TProd
-  , INat
+  , INat(..)
   , SINat
+  , Sing(..)
   , CValProd
   , CValTProd
   , pmap
@@ -77,6 +78,12 @@ module Control.CArr.CSyn
   , pzip
   , withSize
   , toInt
+  , Tree
+  -- , tsplit
+  , zipTree
+  , cdictTree
+  , withCDict
+  , CDict
 ) where
 
 import qualified Prelude
@@ -522,3 +529,33 @@ type family ToNat (i :: INat) :: Nat where
 type family FromNat (i :: Nat) :: INat where
   FromNat 0 = 'Z
   FromNat n = 'S (FromNat (n-1))
+
+type family Tree (n :: INat) (a :: *)  where
+  Tree 'Z a = a
+  Tree ('S n) a = (Tree n a, Tree n a)
+
+cdictTree :: forall a n. CVal a => SINat n -> CDict (Tree n a)
+cdictTree SZ = CDict
+cdictTree (SS n) = case cdictTree @a n of
+                     CDict -> CDict
+
+zipTree' :: CAlg f => SINat n -> f ([Double], [Double]) [Double]
+         -> f (Tree n [Double], Tree n [Double]) (Tree n [Double])
+zipTree' SZ f = f
+zipTree' (SS x) f =
+  case cdictTree @[Double] x of
+    CDict ->
+      let swap = ((X.fst X.>>> X.fst) X.&&& (X.snd X.>>> X.fst)) X.&&&
+                 ((X.fst X.>>> X.snd) X.&&& (X.snd X.>>> X.snd))
+      in swap X.>>> (zipTree' x f X.*** zipTree' x f)
+
+zipTree :: (CAlg f, CVal ctx)
+        => SINat n -> f ([Double], [Double]) [Double]
+        -> Expr f ctx (Tree n [Double], Tree n [Double])
+        -> Expr f ctx (Tree n [Double])
+zipTree n f x =
+  case cdictTree @[Double] n of
+    CDict -> x X.>>> Expr (zipTree' n f)
+
+withCDict :: CDict a -> (CVal a => b) -> b
+withCDict CDict f = f
