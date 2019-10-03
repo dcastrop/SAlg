@@ -16,45 +16,50 @@ import Language.SPar.Skel ( (:=>) )
 --import Control.Monad.CGen
 --import System.Environment
 
---timesBench :: CAlg f => f (TProd 32 [Int]) (TProd 32 [Int])
+--timesBench :: CAlg f => f (TProd 32 [Double]) (TProd 32 [Double])
 --timesBench = cfun $ pmap (psize @32) (prim "sum")
 
-scalarProd :: forall n f ctx. (CAlg f, CVal ctx)
+scalarProd :: forall n f. (CAlg f, CValProd n [[Double]])
            => SINat n
-           -> Expr f ctx (Prod n [[Int]])
-           -> Expr f ctx (Prod n [[Int]])
-scalarProd n = smap @[[Int]] @[[Int]] n (par $ prim "prod")
+           -> f (Prod n [[Double]]) (Prod n [[Double]])
+scalarProd n =
+  cfun $ smap @[[Double]] @[[Double]] n (par $ prim "prod")
 
-catv :: forall n f a ctx. (IsSing n, CAlg f, CVal a, CVal ctx)
-           => SINat n -> Expr f ctx (Prod n [a]) -> Expr f ctx [a]
-catv n z = sfold n (prim "cat" @@ 0) z
+catv :: forall n f a. (IsSing n, CAlg f, CVal a)
+           => SINat n -> f (Prod n [a]) [a]
+catv n =
+  withCDict (cdictProd @[a] n) $ cfun $ sfold n (prim "cat" @@ 0)
 
 parProd :: forall n. (IsSing n)
-        => SINat n -> [[Int]] :=> [[Int]]
-parProd n = cfun $ \x -> catv n $ scalarProd n $ splitv n x
+        => SINat n -> [[Double]] :=> [[Double]]
+parProd n = withCDict (cdictProd @[[Double]] n) $
+  cfun $ \x -> catv n `app` (scalarProd n `app` (ssplitv @[Double] n `app` x))
 
--- parProd0 :: [[Int]] :=> [[Int]]
--- parProd0 = parProd @0
+parProd0 :: [[Double]] :=> [[Double]]
+parProd0 = withSize 0 parProd
 
-parProd1 :: [[Int]] :=> [[Int]]
+parProd1 :: [[Double]] :=> [[Double]]
 parProd1 = withSize 1 parProd
 
-parProd2 :: [[Int]] :=> [[Int]]
+parProd2 :: [[Double]] :=> [[Double]]
 parProd2 = withSize 2 parProd
 
-parProd4 :: [[Int]] :=> [[Int]]
+parProd3 :: [[Double]] :=> [[Double]]
+parProd3 = withSize 3 parProd
+
+parProd4 :: [[Double]] :=> [[Double]]
 parProd4 = withSize 4 parProd
 
-parProd8 :: [[Int]] :=> [[Int]]
+parProd8 :: [[Double]] :=> [[Double]]
 parProd8 = withSize 8 parProd
 
-parProd16 :: [[Int]] :=> [[Int]]
+parProd16 :: [[Double]] :=> [[Double]]
 parProd16 = withSize 16 parProd
 
-parProd32 :: [[Int]] :=> [[Int]]
+parProd32 :: [[Double]] :=> [[Double]]
 parProd32 = withSize 32 parProd
 
-parProd64 :: [[Int]] :=> [[Int]]
+parProd64 :: [[Double]] :=> [[Double]]
 parProd64 = withSize 64 parProd
 
 
@@ -69,10 +74,10 @@ parProd64 = withSize 64 parProd
 --        \z -> smap @5 (prim "prod") z
 --    cat = cfun $ prim "cat"
 --
---scalarSeq :: [Int] :-> [Int]
+--scalarSeq :: [Double] :-> [Double]
 --scalarSeq = scalarProd
 --
---scalarPar :: [Int] :=> [Int]
+--scalarPar :: [Double] :=> [Double]
 --scalarPar = lift scalarProd
 
 --main :: P.IO ()
