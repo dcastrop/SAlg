@@ -82,6 +82,21 @@ fft2 = withSize 2 fft
 
 fft3 :: CAlg f => f [Double] [Double]
 fft3 = withSize 3 fft
+
+fft4 :: CAlg f => f [Double] [Double]
+fft4 = withSize 4 fft
+
+fft5 :: CAlg f => f [Double] [Double]
+fft5 = withSize 5 fft
+
+fft6 :: CAlg f => f [Double] [Double]
+fft6 = withSize 6 fft
+
+fft7 :: CAlg f => f [Double] [Double]
+fft7 = withSize 7 fft
+
+fft8 :: CAlg f => f [Double] [Double]
+fft8 = withSize 8 fft
   --where
   --  p2sx :: Integer
   --  p2sx = 2 ^ (fromINat (SS x) :: Integer)

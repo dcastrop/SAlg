@@ -35,6 +35,7 @@ module Language.SPar
   , simpl
   , codeGen
   , declareParFun
+  , earlySend
   ) where
 
 import Type.Reflection
@@ -356,33 +357,44 @@ join (MIf e kl kr k) = MIf e kl kr $! fmap join k
 join (MRet f) = f
 
 instance CAp t v => Monad (SPar v t) where
-  MSnd e p k      >>= kf = MSnd e p $! k >>= kf
-  MRcv p t k      >>= kf = MRcv p t $! \x -> k x >>= kf
-  MRun t a k      >>= kf = MRun t a $! \x -> k x >>= kf
-  MCse e kl kr k  >>= kf = MCse e kl kr $! \x -> k x >>= kf
-  MIf e kl kr k   >>= kf = MIf e kl kr $! \x -> k x >>= kf
-  MRet x          >>= kf = kf x
+  MSnd e p k     >>= kf = MSnd e p $! k >>= kf
+  MRcv p t k     >>= kf = MRcv p t $! \x -> k x >>= kf
+  MRun t a k     >>= kf = MRun t a $! \x -> k x >>= kf
+  MCse e kl kr k >>= kf = MCse e kl kr $! \x -> k x >>= kf
+  MIf e kl kr k  >>= kf = MIf e kl kr $! \x -> k x >>= kf
+  MRet x         >>= kf = kf x
+
+takePrefix :: CVal a
+           => Integer
+           -> Integer
+           -> (CPar a -> CPar a)
+           -> CPar a
+           -> (CPar a -> CPar a, CPar a)
+takePrefix ll lvl pre f@(MSnd e p' kp')
+  | not $ (`Set.member` fbvse) ll
+  = takePrefix ll lvl (\x -> pre (MSnd e p' x)) kp'
+  | otherwise
+  = (pre, f)
+  where
+    fbvse = fbvs e
+takePrefix ll lvl pre e@(MRun f a ks)
+  | not $ (`Set.member` fbvsa) ll
+  = takePrefix ll (lvl + 1) (\x -> pre (MRun f a $ close (lvl + 1) x)) (ks $ BVar $ lvl + 1)
+  | otherwise
+  = (pre, e)
+  where
+    fbvsa = fbvs a
+takePrefix _ _ pre x
+  = (pre, x)
 
 earlySend :: CVal a => Integer -> CPar a -> CPar a
 earlySend l (MSnd e p k) = MSnd e p $ earlySend l k
 earlySend l (MRcv p t k) =
-  case earlySend (l+1) (k $ BVar l) of
-    MSnd e p' ks ->
-      if not (l `Set.member` fbvs e)
-      then MSnd e p' (earlySend l $ MRcv p t $ close l ks)
-      else MRcv p t (close l $ MSnd e p' ks)
-    MRun f a ks ->
-      if not (l `Set.member` fbvs a)
-      then MRun f a $ \ta -> earlySend l $ MRcv p t $ close l $ ks ta
-      else MRcv p t (close l $ MRun f a ks)
-    k' -> MRcv p t $ close l k'
+  case takePrefix l l (\x -> x) $! earlySend (l+1) (k $ BVar l) of
+    (pre, post) -> pre $! MRcv p t $! close l $! post
 earlySend l (MRun t a k) =
-  case earlySend (l+1) (k $ BVar l) of
-    MSnd e p' ks ->
-      if not (l `Set.member` fbvs e)
-      then MSnd e p' $ earlySend l $ MRun t a $ close l ks
-      else MRun t a (close l $ MSnd e p' ks)
-    k' -> MRun t a $ close l k'
+  case takePrefix l l (\x -> x) $! earlySend (l+1) (k $! BVar l) of
+    (pre, post) -> pre $! MRun t a $! close l $! post
 earlySend l (MCse e kl kr k) =
   MCse e (\x -> earlySend l (kl x)) (\x -> earlySend l (kr x))
   (\x -> earlySend l (k x))
