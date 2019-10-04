@@ -28,6 +28,7 @@ module Control.CArr.CSyn
   , vlet
   , (.$)
   , fix
+  , pfix
 --  , Fun
   , prim
   , primLit
@@ -214,6 +215,21 @@ fix :: (CAlg t, X.CArrFix t, CVal b, CVal a)
 fix k f = X.kfix k Prelude.$ \rf ->
   case f (app rf) sub of
     Expr o -> o
+
+pfix :: forall t a b. (CAlg t, X.CArrFix t, CVal b, CVal a)
+    => Int
+    -> (forall f. (CAlg f, X.CArrFix f) => (forall ctx. Expr f ctx a -> Expr f ctx b) ->
+        Var f a a -> Expr f a b)
+    -> t a b
+pfix k f = kfix k Prelude.$ \rf ->
+  case f (app rf) sub of
+    Expr o -> o
+  where
+    kfix :: (CVal a, CVal b) => Int -> (forall f. CAlg f => f a b -> f a b)
+         -> t a b
+    kfix kk ff
+      | kk Prelude.<= 0 = X.newProc X.>>> X.fix ff
+    kfix kk ff = ff (kfix (kk Prelude.- 1) ff)
 
 cfun :: CAlg t => (Var t a a -> Expr t a b) -> t a b
 cfun f = case f sub of
