@@ -40,6 +40,16 @@ msort n = fix n $ \ms x ->
     vlet (par ms $ vtake sz2 x) $ \xl ->
     vlet (par ms $ vdrop sz2 x) $ \xr ->
     (par $ prim "merge") $ pair (sz, pair (xl, xr))
+--
+-- msort :: (CAlg f, CArrFix f) => Int -> f [Double] [Double]
+-- msort n = pfix n $ \ms x ->
+--   vlet (vsize x) $ \sz ->
+--   if sz <= 1
+--   then x
+--   else vlet (sz / 2) $ \sz2 ->
+--     vlet (ms $ vtake sz2 x) $ \xl ->
+--     vlet (ms $ vdrop sz2 x) $ \xr ->
+--     prim "merge" $ pair (sz, pair (xl, xr))
 
 msort_2 :: (CAlg f, CArrFix f) => f [Double] [Double]
 msort_2 = fix 2 $ \ms x ->
@@ -78,8 +88,8 @@ parMsort6 = msort 6
 parMsort7 :: [Double] :=> [Double]
 parMsort7 = msort 7
 
-parMsort8 :: [Double] :=> [Double]
-parMsort8 = msort 8
+--parMsort8 :: [Double] :=> [Double]
+--parMsort8 = msort 8
 
 --strat :: AnnStrat
 --strat = ann msort
