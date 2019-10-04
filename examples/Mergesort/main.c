@@ -36,22 +36,22 @@ static inline double get_time()
     return t.tv_sec + t.tv_usec*1e-6;
 }
 
-vec_int_t randvec(size_t s){
-  vec_int_t in;
-  in.elems = (int *)calloc(s, sizeof(int));
+vec_double_t randvec(size_t s){
+  vec_double_t in;
+  in.elems = (double *)calloc(s, sizeof(double));
   in.size = s;
 
   srand(get_time());
 
   for (int i = 0; i < s; i++) {
-    in.elems[i] = (int)rand() % 100;
+    in.elems[i] = (double)rand();
   }
 
   return in;
 }
 
-vec_int_t merge(pair_int_pair_vec_int_vec_int_t in){
-  vec_int_t out;
+vec_double_t merge(pair_int_pair_vec_double_vec_double_t in){
+  vec_double_t out;
   int z=0;
   int i=0;
   int j=0;
@@ -103,7 +103,7 @@ int main(int argc, const char *argv[]) {
     usage(argv[0]);
   }
 
-  vec_int_t in, out;
+  vec_double_t in, out;
   double start, end;
   // Warmup
   for(int i=0; i<10; i++){
