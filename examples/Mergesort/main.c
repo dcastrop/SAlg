@@ -108,7 +108,7 @@ int main(int argc, const char *argv[]) {
   // Warmup
   for(int i=0; i<10; i++){
     in = randvec(size);
-    out = parMsort8(in);
+    out = parMsort3(in);
 //  for (int i = 0; i < out.size; i++) {
 //    printf("%d ", out.elems[i]);
 //  }
@@ -130,7 +130,7 @@ int main(int argc, const char *argv[]) {
   BENCHMARK("ms5", parMsort5)
   BENCHMARK("ms6", parMsort6)
   BENCHMARK("ms7", parMsort7)
-  BENCHMARK("ms8", parMsort8)
+  //BENCHMARK("ms8", parMsort8)
 
   // time = 0;
   // for(int i=0; i<REPETITIONS; i++){

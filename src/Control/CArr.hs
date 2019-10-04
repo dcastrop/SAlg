@@ -140,4 +140,4 @@ class CArr t => CArrPar t where
   newProc :: CVal a => t a a
   runAt :: CVal a => PID -> t a a
 
-type CAlg t = (CArrIf t, CArrVec t, CArrCmp t, CArrFrac t, CArrPar t)
+type CAlg t = (CArrIf t, CArrVec t, CArrCmp t, CArrFrac t, CArrPar t, CArrFix t)
