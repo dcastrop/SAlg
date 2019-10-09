@@ -39,14 +39,16 @@ module Language.SPar
   ) where
 
 import Type.Reflection
+import Control.Monad.Extra ( (<$!>) )
+import Control.Monad.State.Strict ( State, get, put, evalState )
+import Data.List (nub)
+import qualified Data.Set as Set
+import           Data.Set  ( Set )
 
 import Control.Monad.CGen
 import Data.C
 import Language.Alg
 
-import Data.List (nub)
-import qualified Data.Set as Set
-import           Data.Set  ( Set )
 
 data SPar v t a where
   MSnd :: CVal a
@@ -126,8 +128,8 @@ printCPar l (MSnd v p k)
 printCPar l (MRcv p _ k)
   = "recv " ++ show p ++ " ; /?" ++ show l ++ ". \n "
   ++ printCPar (l+1) (k (BVar l))
-printCPar l (MRun _ x k)
-  = "run " ++ "(" ++ printAlg l x
+printCPar l (MRun f x k)
+  = "run " ++ printAlg l (unFun f) ++ " (" ++ printAlg l x
   ++ ") ; /?" ++ show l ++ ". \n" ++ printCPar (l+1) (k (BVar l))
 printCPar l (MCse v x y k)
   = "case (" ++ printAlg l v ++ ") \n " ++
@@ -364,44 +366,72 @@ instance CAp t v => Monad (SPar v t) where
   MIf e kl kr k  >>= kf = MIf e kl kr $! \x -> k x >>= kf
   MRet x         >>= kf = kf x
 
+type FVM a = State Integer a
+
+next :: FVM Integer
+next = get >>= \s -> put (s+1) >> pure s
+
 takePrefix :: CVal a
-           => Integer
-           -> Integer
+           => Set Integer
+           -> (CPar a -> CPar a)
            -> (CPar a -> CPar a)
            -> CPar a
-           -> (CPar a -> CPar a, CPar a)
-takePrefix ll lvl pre f@(MSnd e p' kp')
-  | not $ (`Set.member` fbvse) ll
-  = takePrefix ll lvl (\x -> pre (MSnd e p' x)) kp'
+           -> FVM (CPar a -> CPar a, CPar a)
+takePrefix ll pre post (MSnd e p' kp')
+  | ll `Set.disjoint` fbvse
+  = takePrefix ll (\x -> pre (MSnd e p' x)) post kp'
   | otherwise
-  = (pre, f)
+  = takePrefix ll pre (\x -> post (MSnd e p' x)) kp'
   where
     fbvse = fbvs e
-takePrefix ll lvl pre e@(MRun f a ks)
-  | not $ (`Set.member` fbvsa) ll
-  = takePrefix ll (lvl + 1) (\x -> pre (MRun f a $ close (lvl + 1) x)) (ks $ BVar $ lvl + 1)
-  | otherwise
-  = (pre, e)
+takePrefix ll pre post (MRun f a kp')
+  | ll `Set.disjoint` fbvse = do
+      nl <- next
+      takePrefix ll (\x -> pre (MRun f a $! close nl x)) post $ kp' $ BVar nl
+  | otherwise = do
+      nl <- next
+      let nll = Set.insert nl ll
+      takePrefix nll pre (\x -> post (MRun f a $! close nl x)) $ kp' $ BVar nl
   where
-    fbvsa = fbvs a
-takePrefix _ _ pre x
-  = (pre, x)
+    fbvse = fbvs a `Set.union` fbvs (unFun f)
+takePrefix _ pre post k =
+  pure (pre, post k)
+--takePrefix ll pre post e@(MRun f a ks)
+--  | ll `Set.disjoint` fbvsa = do
+--      nl <- next
+--      takePrefix ll (\x -> pre (MRun f a $ close nl x)) (ks $ BVar nl)
+--  | otherwise
+--  = pure $ (pre, e)
+--  where
+--    fbvsa = fbvs a
+--takePrefix _ pre post x
+--  = pure (pre, x)
 
-earlySend :: CVal a => Integer -> CPar a -> CPar a
-earlySend l (MSnd e p k) = MSnd e p $ earlySend l k
-earlySend l (MRcv p t k) =
-  case takePrefix l l (\x -> x) $! earlySend (l+1) (k $ BVar l) of
-    (pre, post) -> pre $! MRcv p t $! close l $! post
-earlySend l (MRun t a k) =
-  case takePrefix l l (\x -> x) $! earlySend (l+1) (k $! BVar l) of
-    (pre, post) -> pre $! MRun t a $! close l $! post
-earlySend l (MCse e kl kr k) =
-  MCse e (\x -> earlySend l (kl x)) (\x -> earlySend l (kr x))
-  (\x -> earlySend l (k x))
-earlySend l (MIf e kl kr k) =
-  MIf e (earlySend l kl) (earlySend l kr)
-  (\x -> earlySend l (k x))
-earlySend _ f@MRet{} = f
+earlySend :: CVal a => CPar a -> FVM (CPar a)
+earlySend (MSnd e p k) = MSnd e p <$!> earlySend k
+earlySend (MRcv p t k) = do
+  !l <- next
+  !kl <- earlySend (k $ BVar l)
+  !(pre, post) <- takePrefix (Set.singleton l) id id kl
+  pure <$!> pre $! MRcv p t $! close l $! post
+earlySend (MRun t a k) = do
+  !l <- next
+  !kl <- earlySend (k $ BVar l)
+  !(pre, post) <- takePrefix (Set.singleton l) id id kl
+  pure <$!> pre $! MRun t a $! close l $! post
+earlySend (MCse e kl kr k) = do
+  x <- next
+  MCse e
+    <$!> (close x <$!> earlySend (kl $ BVar x))
+    <*> (close x <$!> earlySend (kr $ BVar x))
+    <*> (close x <$!> earlySend (k $ BVar x))
+earlySend (MIf e kl kr k) = do
+  x <- next
+  MIf e
+    <$!> earlySend kl
+    <*> earlySend kr
+    <*> (close x <$!> earlySend (k $ BVar x))
+earlySend f@MRet{} = pure f
 
 close :: (CVal a, CVal b) => Integer -> CPar a -> Alg b -> CPar a
 close i (MRet e) = \x -> MRet (closeAlg i e x)
@@ -411,7 +441,7 @@ close i (MCse e kl kr k) = \x ->
   MCse (closeAlg i e x) (\y -> close i (kl y) x)
   (\y -> close i (kr y) x) (\y -> close i (k y) x)
 close i (MRun t a k) = \x ->
-  MRun t (closeAlg i a x) (\y -> close i (k y) x)
+  MRun (closeFun i t x) (closeAlg i a x) (\y -> close i (k y) x)
 close i (MRcv p a k) = \x ->
   MRcv p a (\y -> close i (k y) x)
 close i (MSnd e p k) = \x ->
@@ -450,7 +480,7 @@ declareParFun pn p f
     !cty = codTy f
 
 codeGen :: CVal a => PID -> CPar a -> CGen ASt (CExpr, [CBlockItem])
-codeGen self = cgen . earlySend 0
+codeGen self = cgen . (`evalState` 0) . earlySend
   where
     cgen :: forall a. CVal a => CPar a -> CGen ASt (CExpr, [CBlockItem])
     cgen (MSnd e@(CVal iv)  p  k) = do

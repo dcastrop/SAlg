@@ -19,6 +19,7 @@ module Language.Alg
   , AAlg(..)
   , Alg (..)
   , closeAlg
+  , closeFun
   , fbvs
   , CAp (..)
   , CVar (..)
@@ -162,11 +163,16 @@ data Alg t where
   Bot  :: Alg t
   Fix  :: (CVal a, CVal b) => !(a :-> b -> a :-> b) -> Alg (a -> b)
 
+closeFun :: forall a b c. (Typeable a, Typeable b, Typeable c)
+         => Integer -> a :-> b -> Alg c -> a :-> b
+closeFun i (Fun f) x = Fun (closeAlg i f x)
+
 closeAlg :: forall a b. (Typeable a, Typeable b)
          => Integer -> Alg a -> Alg b -> Alg a
 closeAlg l  e@(BVar  x    ) a =
   case eqTypeRep (typeRep :: TypeRep a) (typeRep :: TypeRep b) of
-    Just HRefl | l Prelude.== x -> a
+    Just HRefl ->
+      if l Prelude.== x then a else e
     _ -> e
 closeAlg l  (BIf   b x y) a =
   BIf (closeAlg l b a) (closeAlg l x a) (closeAlg l y a)
@@ -230,7 +236,7 @@ fbvs (Proj  i x  ) = fbvs i `Set.union` fbvs x
 fbvs (VLen  x    ) = fbvs x
 fbvs (VTake i x  ) = fbvs i `Set.union` fbvs x
 fbvs (VDrop i x  ) = fbvs i `Set.union` fbvs x
-fbvs Fix {}      = Set.empty -- FIXME: recursive functions must be closed!
+fbvs (Fix f)      = fbvs (unFun (f (Fun Bot))) -- FIXME: recursive functions must be closed!
 fbvs Lit {}      = Set.empty
 fbvs Prim{}      = Set.empty
 fbvs Bot {}      = Set.empty
@@ -495,6 +501,8 @@ asnd t = Snd t
 apair :: (CVal a, CVal b) => Alg a -> Alg b -> Alg (a, b)
 apair (Fst (BVar e1)) (Snd (BVar e2))
   | e1 Prelude.== e2 = BVar $ e1
+apair (Fst (CVal e1@(CVar v1 _))) (Snd (CVal (CVar v2 _)))
+  | v1 Prelude.== v2 = CVal e1
 apair e1 e2 = Pair e1 e2
 
 acase :: (CVal a, CVal b, CVal c) => Alg (Either a b) -> a :-> c -> b :-> c -> Alg c

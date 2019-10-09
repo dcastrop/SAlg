@@ -207,13 +207,17 @@ instance X.CArrPar f => X.CArrPar (Expr f) where
   newProc =  Expr X.newProc
   runAt p = Expr (X.runAt p)
 
+instance X.CArrFix f => X.CArrFix (Expr f) where
+  fix f = Expr (X.fix f)
+  kfix n f = Expr (X.kfix n f)
+
 fix :: (CAlg t, X.CArrFix t, CVal b, CVal a)
     => Int
     -> (forall f. CAlg f => (forall ctx. Expr f ctx a -> Expr f ctx b) ->
         Var f a a -> Expr f a b)
     -> t a b
 fix k f = X.kfix k Prelude.$ \rf ->
-  case f (app rf) sub of
+  case f (app (Expr rf)) sub of
     Expr o -> o
 
 pfix :: forall t a b. (CAlg t, X.CArrFix t, CVal b, CVal a)
@@ -222,7 +226,7 @@ pfix :: forall t a b. (CAlg t, X.CArrFix t, CVal b, CVal a)
         Var f a a -> Expr f a b)
     -> t a b
 pfix k f = kfix k Prelude.$ \rf ->
-  case f (app rf) sub of
+  case f (app (Expr rf)) sub of
     Expr o -> o
   where
     kfix :: (CVal a, CVal b) => Int -> (forall f. CAlg f => f a b -> f a b)
@@ -235,9 +239,9 @@ cfun :: CAlg t => (Var t a a -> Expr t a b) -> t a b
 cfun f = case f sub of
            Expr e -> e
 
-app :: (CAlg t, CVal b)
-    => t a b -> Expr t ctx a -> Expr t ctx b
-app f (Expr x) =  Expr (f X.. x)
+app :: CAlg t
+    => Expr t a b -> Expr t ctx a -> Expr t ctx b
+app (Expr f) (Expr x) =  Expr (f X.. x)
 
 prim :: (CAlg t, CVal b) => String -> Expr t ctx a -> Expr t ctx b
 prim s (Expr x) = Expr Prelude.$ X.arr s Prelude.undefined X.. x
@@ -245,7 +249,7 @@ prim s (Expr x) = Expr Prelude.$ X.arr s Prelude.undefined X.. x
 primLit :: (CAlg t, CVal a, CVal ctx) => a -> Expr t ctx a
 primLit s = Expr (X.lit s)
 
-vlet :: forall t ctx a b. CAlg t
+vlet :: forall a t ctx b. CAlg t
      => Expr t ctx a -> (CVal a => Var t (a, ctx) a -> Expr t (a, ctx) b) -> Expr t ctx b
 vlet (Expr x) f =
   case f fstCtx of
