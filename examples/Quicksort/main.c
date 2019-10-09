@@ -29,6 +29,33 @@
   printf("\t\tstddev: %f\n", REPETITIONS <= 1? 0 : sqrt(var / (REPETITIONS - 1))); \
 }
 
+#define CLEARCACHE() { \
+     const int sze = 20*1024*1024; \
+     char *c = (char *)malloc(sze); \
+     for (int i = 0; i < 0xffff; i++) \
+       for (int j = 0; j < sze; j++) \
+         c[j] = i*j; \
+     free(c); \
+}
+
+#define PRINT(l) { \
+  for(int i = 0; i < l.size; i++){ \
+    printf("%d ", l.elems[i]); \
+  } \
+  printf("\n", l.elems[i]); \
+}
+
+#define BENCHSTEP(i, f) { \
+  CLEARCACHE() \
+  start[i] = get_time(); \
+  out = f(tmp); \
+  end[i] = get_time(); \
+  time_diff[i] = end[i] - start[i]; \
+  time_old[i] = time[i]; \
+  time[i] += (time_diff[i] - time[i])/(i+1); \
+  var[i] += (time_diff[i] - time[i]) * (time_diff[i] - time_old[i]); \
+}
+
 static inline double get_time()
 {
     struct timeval t;
@@ -112,7 +139,7 @@ int main(int argc, const char *argv[]) {
   }
 
   vec_int_t in, out;
-  double start, end;
+  double start[9], end[9];
   // Warmup
   for(int i=0; i<10; i++){
     in = randvec(size);
@@ -131,17 +158,51 @@ int main(int argc, const char *argv[]) {
   }
 
 
-  double time = 0;
-  double time_diff = 0;
-  double time_old = 0;
-  double var = 0;
-  BENCHMARK("qs0", parMsort0)
-  BENCHMARK("qs1", parMsort1)
-  BENCHMARK("qs2", parMsort2)
-  BENCHMARK("qs3", parMsort3)
-  BENCHMARK("qs4", parMsort4)
-  BENCHMARK("qs5", parMsort5)
-  BENCHMARK("qs6", parMsort6)
-  BENCHMARK("qs7", parMsort7)
-  BENCHMARK("qs8", parMsort8)
+  double time[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+  double time_diff[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+  double time_old[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+  double var[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+  vec_int_t tmp;
+
+  for(int i=0; i<REPETITIONS; i++){
+    in = randvec(size);
+    tmp.elems = (int *) malloc (size * sizeof(int));
+    tmp.size = size;
+
+    memcpy(tmp.elems, in.elems, size * sizeof(int));
+    BENCHSTEP(0, parMsort0);
+
+    memcpy(tmp.elems, in.elems, size * sizeof(int));
+    BENCHSTEP(1, parMsort1);
+
+    memcpy(tmp.elems, in.elems, size * sizeof(int));
+    BENCHSTEP(2, parMsort2);
+
+    memcpy(tmp.elems, in.elems, size * sizeof(int));
+    BENCHSTEP(3, parMsort3);
+
+    memcpy(tmp.elems, in.elems, size * sizeof(int));
+    BENCHSTEP(4, parMsort4);
+
+    memcpy(tmp.elems, in.elems, size * sizeof(int));
+    BENCHSTEP(5, parMsort5);
+
+    memcpy(tmp.elems, in.elems, size * sizeof(int));
+    BENCHSTEP(6, parMsort6);
+
+    memcpy(tmp.elems, in.elems, size * sizeof(int));
+    BENCHSTEP(7, parMsort7);
+
+    memcpy(tmp.elems, in.elems, size * sizeof(int));
+    BENCHSTEP(8, parMsort8);
+
+    free(in.elems);
+    free(tmp.elems);
+  }
+  for (int i=0; i<9; i++){
+    printf("\tK: %d\n", i);
+    printf("\t\tmean: %f\n", time[i]);
+    printf("\t\tstddev: %f\n", REPETITIONS <= 1? 0 : sqrt(var[i] / (REPETITIONS - 1)));
+  }
 }
