@@ -17,7 +17,7 @@ import Data.C ( CVal )
 import Control.CCat
 import Control.CArr
 import Control.CArr.CSyn ( INat(..), SINat, Sing(..), CDict(..), Tree
-                         , cdictTree, withCDict, toInt, withSize )
+                         , cdictTree, withCDict, toInteger, withSize )
 
 
 tsplit :: forall f a n. (CAlg f, CVal a) => SINat n -> f a (a, a) -> f a (Tree n a)
@@ -43,7 +43,7 @@ fmapTIx :: CAlg f => SINat n -> f (Int, [Double]) [Double] -> Integer -> f (Tree
 fmapTIx SZ f k = Prelude.fromInteger k &&& id >>> f
 fmapTIx (SS x) f k =
   withCDict (cdictTree @[Double] x) $
-  fmapTIx x f k *** fmapTIx x f (k + (2 ^ (toInt x :: Integer)))
+  fmapTIx x f k *** fmapTIx x f (k + (2 ^ (toInteger x :: Integer)))
 
 addPadding :: CAlg f => f [Double] [Double]
 addPadding = prim "add_padding"
