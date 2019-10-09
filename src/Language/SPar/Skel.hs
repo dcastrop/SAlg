@@ -179,12 +179,12 @@ newtype (:=>) a b = SSkel { unSkel :: DType a -> PM (CProc b) }
 annotate :: AnnStrat -> a :=> b -> a :=> b
 annotate st (SSkel sk) = SSkel $ \a -> local (\_ -> st) $! sk a
 
-printASkel :: CVal a => AnnStrat -> a :=> b -> IO ()
-printASkel st (SSkel f) = do
+printASkel :: CVal a => a :=> b -> IO ()
+printASkel (SSkel f) = do
   putStrLn $ printDefs $ Map.toList $ defm $ defs df
   putStrLn $ printSProc pc
   where
-    (pc, df, ()) = runRWS (f $ DVal 0 getCTy) st emptySt
+    (pc, df, ()) = runRWS (f $ DVal 0 getCTy) mempty emptySt
 
     printDefs :: [(String, AAlg)] -> String
     printDefs [] = ""
