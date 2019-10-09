@@ -88,8 +88,8 @@ parMsort6 = msort 6
 parMsort7 :: [Double] :=> [Double]
 parMsort7 = msort 7
 
---parMsort8 :: [Double] :=> [Double]
---parMsort8 = msort 8
+parMsort8 :: [Double] :=> [Double]
+parMsort8 = msort 8
 
 --strat :: AnnStrat
 --strat = ann msort
