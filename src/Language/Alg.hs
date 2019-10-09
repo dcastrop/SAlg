@@ -659,8 +659,7 @@ compileAlg (BIf b x y) = do
       (Just $ cSeq $ cy ++ cret rv rv2) undefNode])
 compileAlg (UnOp o x) = do
   (rv, cx) <- compileAlg x
-  pure (rv, cx ++
-         [CBlockStmt $ cExpr $ cAssign rv $ CUnary (go o) rv undefNode])
+  pure (CUnary (go o) rv undefNode, cx)
   where
     go Neg = CMinOp
 compileAlg (BinOp o x y) = do

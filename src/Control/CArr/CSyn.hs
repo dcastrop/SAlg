@@ -80,7 +80,8 @@ module Control.CArr.CSyn
   , splitv
   , pzip
   , withSize
-  , toInt
+  , fromINat
+  , toInteger
   , Tree
   -- , tsplit
   , zipTree
@@ -355,9 +356,12 @@ instance IsSing 'Z where sing = SZ
 instance IsSing n => IsSing ('S n) where sing = SS sing
 type SINat (n :: INat) = Sing n
 
-toInt :: Prelude.Num a => SINat n -> a
-toInt SZ = 0
-toInt (SS n) = 1 Prelude.+ toInt n
+fromINat :: Prelude.Num a => SINat n -> a
+fromINat = Prelude.fromInteger Prelude.. toInteger
+
+toInteger :: SINat n -> Prelude.Integer
+toInteger SZ = 0
+toInteger (SS n) = 1 Prelude.+ toInteger n
 
 type IsNat (n :: INat) = IsSing n
 
@@ -370,7 +374,7 @@ fromInteger i = case fromInteger (i Prelude.- 1) of
                   SomeINat n -> SomeINat (SS n)
 
 withSize :: Prelude.Integer -> (forall n. IsSing n => SINat n -> a) -> a
-withSize i f = case fromInteger i of
+withSize i f = case fromInteger (i Prelude.- 1) of
                  SomeINat n -> f n
 
 type TProd n a = Prod (FromNat n) a
@@ -526,8 +530,7 @@ psplitv n =
     CDict -> (X.vsize Prelude./ (Prelude.fromInteger isn)) X.&&& X.id
              X.>>> splitv' Prelude.True n
   where
-    isn :: Prelude.Integer
-    isn = 1 Prelude.+ toInt n
+    isn = 1 Prelude.+ toInteger n
 
 ssplitv :: forall a t n. (CAlg t, CVal a)
         => SINat n -> t [a] (Prod n [a])
@@ -536,8 +539,7 @@ ssplitv n =
     CDict -> (X.vsize Prelude./ (Prelude.fromInteger isn)) X.&&& X.id
              X.>>> splitv' Prelude.False n
   where
-    isn :: Prelude.Integer
-    isn = 1 Prelude.+ toInt n
+    isn = 1 Prelude.+ toInteger n
 
 splitv :: forall n a f ctx. (CAlg f, CVal a, IsSing n)
        => SINat n -> Expr f ctx [a] -> Expr f ctx (Prod n [a])
