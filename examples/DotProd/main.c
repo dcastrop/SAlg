@@ -74,7 +74,7 @@ vec_double_t randvec(size_t s){
   srand(time(NULL));
 
   for (int i = 0; i < s; i++) {
-    in.elems[i] = (double)(rand() % 100);
+    in.elems[i] = (double)rand() / (double)RAND_MAX ;
   }
 
   return in;
@@ -120,13 +120,13 @@ int main(int argc, const char *argv[]) {
   double out;
   double start, end, time, time_diff, time_old, var;
   // Warmup
-  for(int i=0; i<REPETITIONS; i++){
-    in.fst = randvec(size);
-    in.snd = randvec(size);
-    out = dotProd(in);
-    free_mat(in.fst);
-    free_mat(in.snd);
-  }
+  // for(int i=0; i<REPETITIONS; i++){
+  //   in.fst = randvec(size);
+  //   in.snd = randvec(size);
+  //   out = dot(in);
+  //   free_mat(in.fst);
+  //   free_mat(in.snd);
+  // }
 
   BENCHMARKSEQ("seq", dot)
   BENCHMARKSEQ("par", dotProd)
