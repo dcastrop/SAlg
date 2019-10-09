@@ -47,3 +47,6 @@ parMsort7 = qsort 7
 
 parMsort8 :: [Int] :=> [Int]
 parMsort8 = qsort 8
+
+parMsort9 :: [Int] :=> [Int]
+parMsort9 = qsort 9

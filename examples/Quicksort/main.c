@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define REPETITIONS 1
+#define REPETITIONS 50
 
 #define BENCHMARK(s, f) { \
   time = 0; \
@@ -24,7 +24,7 @@
     var += (time_diff - time) * (time_diff - time_old); \
     free(in.elems); \
   } \
-  printf("\tK: %s\n", s); \
+  printf("\tK: %d\n", s); \
   printf("\t\tmean: %f\n", time); \
   printf("\t\tstddev: %f\n", REPETITIONS <= 1? 0 : sqrt(var / (REPETITIONS - 1))); \
 }
@@ -46,7 +46,6 @@
 }
 
 #define BENCHSTEP(i, f) { \
-  CLEARCACHE() \
   start[i] = get_time(); \
   out = f(tmp); \
   end[i] = get_time(); \
@@ -139,70 +138,87 @@ int main(int argc, const char *argv[]) {
   }
 
   vec_int_t in, out;
-  double start[9], end[9];
   // Warmup
-  for(int i=0; i<10; i++){
-    in = randvec(size);
-    // printf("In %d: ", in.size);
-    // for (int i = 0; i < in.size; i++) {
-    //   printf("%d ", in.elems[i]);
-    // }
-    //printf("\n");
-    out = parMsort1(in);
-    //printf("Out %d: ", out.size);
-    //for (int i = 0; i < out.size; i++) {
-    //  printf("%d ", out.elems[i]);
-    //}
-    //printf("\n \n");
-    free(in.elems);
-  }
+  // for(int i=0; i<10; i++){
+  //   in = randvec(size);
+  //   // printf("In %d: ", in.size);
+  //   // for (int i = 0; i < in.size; i++) {
+  //   //   printf("%d ", in.elems[i]);
+  //   // }
+  //   //printf("\n");
+  //   out = parMsort1(in);
+  //   //printf("Out %d: ", out.size);
+  //   //for (int i = 0; i < out.size; i++) {
+  //   //  printf("%d ", out.elems[i]);
+  //   //}
+  //   //printf("\n \n");
+  //   free(in.elems);
+  // }
+  double start = 0;
+  double end = 0;
+  double time = 0;
+  double time_diff = 0;
+  double time_old = 0;
+  double var = 0;
+
+  BENCHMARK(0, parMsort0);
+  BENCHMARK(1, parMsort1);
+  BENCHMARK(2, parMsort2);
+  BENCHMARK(3, parMsort3);
+  BENCHMARK(4, parMsort4);
+  BENCHMARK(5, parMsort5);
+  BENCHMARK(6, parMsort6);
+  BENCHMARK(7, parMsort7);
+  BENCHMARK(8, parMsort8);
+  BENCHMARK(9, parMsort9);
 
 
-  double time[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
-  double time_diff[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
-  double time_old[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
-  double var[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+  // double start[9], end[9];
+  // double time[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+  // double time_diff[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+  // double time_old[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+  // double var[] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-  vec_int_t tmp;
+  // vec_int_t tmp;
 
-  for(int i=0; i<REPETITIONS; i++){
-    in = randvec(size);
-    tmp.elems = (int *) malloc (size * sizeof(int));
-    tmp.size = size;
+  // for(int i=0; i<REPETITIONS; i++){
+  //   in = randvec(size);
+  //   tmp.elems = (int *) malloc (size * sizeof(int));
+  //   tmp.size = size;
 
-    memcpy(tmp.elems, in.elems, size * sizeof(int));
-    BENCHSTEP(0, parMsort0);
+  //   memcpy(tmp.elems, in.elems, size * sizeof(int));
+  //   BENCHSTEP(0, parMsort0);
 
-    memcpy(tmp.elems, in.elems, size * sizeof(int));
-    BENCHSTEP(1, parMsort1);
+  //   memcpy(tmp.elems, in.elems, size * sizeof(int));
+  //   BENCHSTEP(1, parMsort1);
 
-    memcpy(tmp.elems, in.elems, size * sizeof(int));
-    BENCHSTEP(2, parMsort2);
+  //   memcpy(tmp.elems, in.elems, size * sizeof(int));
+  //   BENCHSTEP(2, parMsort2);
 
-    memcpy(tmp.elems, in.elems, size * sizeof(int));
-    BENCHSTEP(3, parMsort3);
+  //   memcpy(tmp.elems, in.elems, size * sizeof(int));
+  //   BENCHSTEP(3, parMsort3);
 
-    memcpy(tmp.elems, in.elems, size * sizeof(int));
-    BENCHSTEP(4, parMsort4);
+  //   memcpy(tmp.elems, in.elems, size * sizeof(int));
+  //   BENCHSTEP(4, parMsort4);
 
-    memcpy(tmp.elems, in.elems, size * sizeof(int));
-    BENCHSTEP(5, parMsort5);
+  //   memcpy(tmp.elems, in.elems, size * sizeof(int));
+  //   BENCHSTEP(5, parMsort5);
 
-    memcpy(tmp.elems, in.elems, size * sizeof(int));
-    BENCHSTEP(6, parMsort6);
+  //   memcpy(tmp.elems, in.elems, size * sizeof(int));
+  //   BENCHSTEP(6, parMsort6);
 
-    memcpy(tmp.elems, in.elems, size * sizeof(int));
-    BENCHSTEP(7, parMsort7);
+  //   memcpy(tmp.elems, in.elems, size * sizeof(int));
+  //   BENCHSTEP(7, parMsort7);
 
-    memcpy(tmp.elems, in.elems, size * sizeof(int));
-    BENCHSTEP(8, parMsort8);
+  //   memcpy(tmp.elems, in.elems, size * sizeof(int));
+  //   BENCHSTEP(8, parMsort8);
 
-    free(in.elems);
-    free(tmp.elems);
-  }
-  for (int i=0; i<9; i++){
-    printf("\tK: %d\n", i);
-    printf("\t\tmean: %f\n", time[i]);
-    printf("\t\tstddev: %f\n", REPETITIONS <= 1? 0 : sqrt(var[i] / (REPETITIONS - 1)));
-  }
+  //   free(in.elems);
+  //   free(tmp.elems);
+  // }
+  // for (int i=0; i<9; i++){
+  //   printf("\tK: %d\n", i);
+  //   printf("\t\tmean: %f\n", time[i]);
+  //   printf("\t\tstddev: %f\n", REPETITIONS <= 1? 0 : sqrt(var[i] / (REPETITIONS - 1)));
+  // }
 }
