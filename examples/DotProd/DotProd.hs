@@ -12,6 +12,7 @@
 module DotProd where
 
 import Control.CArr.CSyn
+import Language.SPar.Skel ( printASkel )
 
 --timesBench :: CAlg f => f (TProd 32 [Int]) (TProd 32 [Int])
 --timesBench = cfun $ pmap (psize @32) (prim "sum")
@@ -33,7 +34,8 @@ splitIn sz = cfun $ \x ->
 
 dotProdN :: forall f n. CAlg f => SINat n -> f ([Double],[Double]) Double
 dotProdN i = cfun $ \x ->
-  vlet (vsize (fst x) / (1 + toInt i)) $ \sz' ->
+  vlet (vsize (fst x) - 1) $ \sz ->
+  vlet (1 + sz / (1 + fromINat i)) $ \sz' ->
   if sz' == 0 then dot x
   else
     vlet (app (splitIn i) $ pair (sz', x)) $
@@ -44,5 +46,23 @@ dotProdN i = cfun $ \x ->
     dot = prim "dot"
 
 
-dotProd :: CAlg f => f ([Double],[Double]) Double
-dotProd = withSize 1 $ dotProdN
+dotProd1 :: CAlg f => f ([Double],[Double]) Double
+dotProd1 = withSize 1 $ dotProdN
+
+dotProd2 :: CAlg f => f ([Double],[Double]) Double
+dotProd2 = withSize 2 $ dotProdN
+
+dotProd4 :: CAlg f => f ([Double],[Double]) Double
+dotProd4 = withSize 4 $ dotProdN
+
+dotProd8 :: CAlg f => f ([Double],[Double]) Double
+dotProd8 = withSize 8 $ dotProdN
+
+dotProd16 :: CAlg f => f ([Double],[Double]) Double
+dotProd16 = withSize 16 $ dotProdN
+
+dotProd24 :: CAlg f => f ([Double],[Double]) Double
+dotProd24 = withSize 24 $ dotProdN
+
+dotProd32 :: CAlg f => f ([Double],[Double]) Double
+dotProd32 = withSize 32 $ dotProdN

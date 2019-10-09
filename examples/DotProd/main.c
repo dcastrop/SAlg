@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define REPETITIONS 1
+#define REPETITIONS 50
 
 #define BENCHMARKSEQ(s, f) { \
   time = 0; \
@@ -18,7 +18,6 @@
     in.snd = randvec(size); \
     start = get_time(); \
     out = f(in); \
-    printf("Out: %f\n", out); \
     end = get_time(); \
     free_mat(in.fst); \
     free_mat(in.snd); \
@@ -30,6 +29,16 @@
   printf("\tK: %s\n", s); \
   printf("\t\tmean: %f\n", time); \
   printf("\t\tstddev: %f\n", REPETITIONS<=1? 0: sqrt(var / (REPETITIONS - 1))); \
+}
+
+#define WARMUP(f) { \
+  for(int i=0; i<REPETITIONS; i++){ \
+    in.fst = randvec(size); \
+    in.snd = randvec(size); \
+    out = f(in); \
+    free_mat(in.fst); \
+    free_mat(in.snd); \
+  } \
 }
 
 
@@ -119,17 +128,17 @@ int main(int argc, const char *argv[]) {
   pair_vec_double_vec_double_t in;
   double out;
   double start, end, time, time_diff, time_old, var;
-  // Warmup
-  // for(int i=0; i<REPETITIONS; i++){
-  //   in.fst = randvec(size);
-  //   in.snd = randvec(size);
-  //   out = dot(in);
-  //   free_mat(in.fst);
-  //   free_mat(in.snd);
-  // }
+
+  WARMUP(dotProd32)
 
   BENCHMARKSEQ("seq", dot)
-  BENCHMARKSEQ("par", dotProd)
+  BENCHMARKSEQ("1", dotProd1)
+  BENCHMARKSEQ("2", dotProd2)
+  BENCHMARKSEQ("4", dotProd4)
+  BENCHMARKSEQ("8", dotProd8)
+  BENCHMARKSEQ("16", dotProd16)
+  BENCHMARKSEQ("24", dotProd24)
+  BENCHMARKSEQ("32", dotProd32)
   // BENCHMARKSEQ("ms0", parProd)
 
   // BENCHMARKPAR("ms0", scalarProdInit, scalarProd)
