@@ -373,28 +373,29 @@ next = get >>= \s -> put (s+1) >> pure s
 
 takePrefix :: CVal a
            => Set Integer
+           -> Set PID
            -> (CPar a -> CPar a)
            -> (CPar a -> CPar a)
            -> CPar a
            -> FVM (CPar a -> CPar a, CPar a)
-takePrefix ll pre post (MSnd e p' kp')
-  | ll `Set.disjoint` fbvse
-  = takePrefix ll (\x -> pre (MSnd e p' x)) post kp'
+takePrefix ll ps pre post (MSnd e p' kp')
+  | ll `Set.disjoint` fbvse && p' `Set.notMember` ps
+  = takePrefix ll ps (\x -> pre (MSnd e p' x)) post kp'
   | otherwise
-  = takePrefix ll pre (\x -> post (MSnd e p' x)) kp'
+  = takePrefix ll (Set.insert p' ps) pre (\x -> post (MSnd e p' x)) kp'
   where
     fbvse = fbvs e
-takePrefix ll pre post (MRun f a kp')
+takePrefix ll ps pre post (MRun f a kp')
   | ll `Set.disjoint` fbvse = do
       nl <- next
-      takePrefix ll (\x -> pre (MRun f a $! close nl x)) post $ kp' $ BVar nl
+      takePrefix ll ps (\x -> pre (MRun f a $! close nl x)) post $ kp' $ BVar nl
   | otherwise = do
       nl <- next
       let nll = Set.insert nl ll
-      takePrefix nll pre (\x -> post (MRun f a $! close nl x)) $ kp' $ BVar nl
+      takePrefix nll ps pre (\x -> post (MRun f a $! close nl x)) $ kp' $ BVar nl
   where
     fbvse = fbvs a `Set.union` fbvs (unFun f)
-takePrefix _ pre post k =
+takePrefix _ _ pre post k =
   pure (pre, post k)
 --takePrefix ll pre post e@(MRun f a ks)
 --  | ll `Set.disjoint` fbvsa = do
@@ -412,12 +413,12 @@ earlySend (MSnd e p k) = MSnd e p <$!> earlySend k
 earlySend (MRcv p t k) = do
   !l <- next
   !kl <- earlySend (k $ BVar l)
-  !(pre, post) <- takePrefix (Set.singleton l) id id kl
+  !(pre, post) <- takePrefix (Set.singleton l) Set.empty id id kl
   pure <$!> pre $! MRcv p t $! close l $! post
 earlySend (MRun t a k) = do
   !l <- next
   !kl <- earlySend (k $ BVar l)
-  !(pre, post) <- takePrefix (Set.singleton l) id id kl
+  !(pre, post) <- takePrefix (Set.singleton l) Set.empty id id kl
   pure <$!> pre $! MRun t a $! close l $! post
 earlySend (MCse e kl kr k) = do
   x <- next

@@ -88,6 +88,7 @@ data ECTy
   | ECBool
   | ECFlt
   | ECDbl
+  | ECCplx
   | ECStr
   | ECPair ECTy ECTy
   | ECEither ECTy ECTy
@@ -103,6 +104,7 @@ cTyName pref t suff = internalIdent $ pref ++ tyNm t ++ suff
     tyNm ECBool = "int"
     tyNm ECFlt = "float"
     tyNm ECDbl = "double"
+    tyNm ECCplx = "cplx"
     tyNm ECStr = "string"
     tyNm (ECPair l r) = "pair_" ++ tyNm l ++ "_" ++ tyNm r
     tyNm (ECEither l r) = "either_" ++ tyNm l ++ "_" ++ tyNm r
@@ -118,10 +120,18 @@ cUnit = internalIdent "Unit"
 tyUnit :: Ident
 tyUnit = internalIdent "unit_t"
 
+tyCplx :: Ident
+tyCplx = internalIdent "cplx_t"
+
 unitTySpec :: [CDeclSpec]
 unitTySpec = [ CTypeSpec $
                CEnumType (CEnum (Just tUnit) (Just [(cUnit, Nothing)])
                           [] undefNode) undefNode
+             ]
+
+cplxTySpec :: [CDeclSpec]
+cplxTySpec = [ CTypeSpec $ CDoubleType undefNode
+             , CTypeSpec $ CComplexType undefNode
              ]
 
 pairTySpec :: Ident
@@ -217,6 +227,7 @@ typeSpec ECInt = pure $ ([CTypeSpec $ CIntType undefNode], [])
 typeSpec ECBool = pure $ ([CTypeSpec $ CIntType undefNode], [])
 typeSpec ECFlt = pure $ ([CTypeSpec $ CFloatType undefNode], [])
 typeSpec ECDbl = pure $ ([CTypeSpec $ CDoubleType undefNode], [])
+typeSpec ECCplx = (,[]) <$> declare tyCplx cplxTySpec
 typeSpec ECStr = pure $ ([CTypeSpec $ CCharType undefNode], [CPtrDeclr [] undefNode])
 typeSpec p@(ECPair l r) = join $ doPair <$> typeSpec l <*> typeSpec r
   where
@@ -288,7 +299,7 @@ generateFile ist fp m =
     serialiseH st =
       "#ifndef " ++ defined ++ "\n" ++
       "#define " ++ defined ++ "\n\n" ++
-      "#include<stdio.h>\n#include<stdlib.h>\n#include<pthread.h>\n\n" ++
+      "#include<stdio.h>\n#include<stdlib.h>\n#include<pthread.h>\n#include<complex.h>\n" ++
       concat (intersperse "\n\n" $ map lookHdef $ reverse $ hdeclOrder st) ++
       "\n\n#endif\n"
       where
