@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Data.C
   ( CVal (..)
   , CTy(..)
@@ -37,6 +38,7 @@ module Data.C
 
 import Control.Monad.CGen
 import Type.Reflection ( Typeable, TypeRep, typeRep )
+import Data.Complex
 
 data CTy a where
   CUnit   :: CTy ()
@@ -44,6 +46,7 @@ data CTy a where
   CBool   :: CTy Bool
   CFlt    :: CTy Float
   CDbl    :: CTy Double
+  CCplx   :: CTy (Complex Double)
   CStr    :: CTy String
   CPair   :: (CVal a, CVal b) => CTy a -> CTy b -> CTy (a,b)
   CEither :: (CVal a, CVal b) => CTy a -> CTy b -> CTy (Either a b)
@@ -55,6 +58,7 @@ eraseTy CInt          = ECInt
 eraseTy CBool         = ECBool
 eraseTy CFlt          = ECFlt
 eraseTy CDbl          = ECDbl
+eraseTy CCplx         = ECCplx
 eraseTy CStr          = ECStr
 eraseTy (CPair   l r) = ECPair (eraseTy l) (eraseTy r)
 eraseTy (CEither l r) = ECEither (eraseTy l) (eraseTy r)
@@ -72,6 +76,7 @@ getCTyR CInt = typeRep
 getCTyR CBool = typeRep
 getCTyR CFlt = typeRep
 getCTyR CDbl = typeRep
+getCTyR CCplx = typeRep
 getCTyR CStr = typeRep
 
 eitherTy :: (CVal a, CVal b) => t a -> t b -> TypeRep (Either a b)
@@ -112,6 +117,19 @@ instance CVal Double where
   getCTy = CDbl
   cVal i = pure $ cDbl i
 
+instance Ord (Complex Double) where
+  compare i j =
+    case compare (realPart i) (realPart j) of
+      EQ -> compare (imagPart i) (imagPart j)
+      o -> o
+
+instance CVal (Complex Double) where
+  getCTy = CCplx
+  cVal i = pure $
+    CBinary CAddOp (cDbl (realPart i))
+    (CBinary CMulOp (cDbl (imagPart i)) (cVar $ internalIdent "I") undefNode)
+    undefNode
+
 instance (CVal a, CVal b) => CVal (a, b) where
   getCTy = CPair getCTy getCTy
   cVal (x, y) = do
@@ -146,7 +164,7 @@ iniE = (`CInitExpr` undefNode)
 
 instance (CVal a) => CVal [a] where
   getCTy = CVec getCTy
-  cVal _xs = undefined
+  cVal _xs = error "FIXME: unimplemented"
 
 instance {-# OVERLAPPING #-} CVal String where
   getCTy = CStr
