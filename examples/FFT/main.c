@@ -18,6 +18,7 @@
     start = get_time(); \
     out = f(in); \
     end = get_time(); \
+    show("Res:", in.fst); \
     free_mat(in); \
     time_diff = end - start; \
     time_old = time; \
@@ -60,7 +61,7 @@
 }
 
 /* Primitive functions */
-vec_cplx_t add_padding(vec_cplx_t v) {
+// pair_vec_cplx_vec_cplx_t add_padding(vec_cplx_t v) {
 //  int size = 2 ^ (int)ceil(log2(v.size));
 //  if (v.size == size){
 //    return v;
@@ -69,82 +70,92 @@ vec_cplx_t add_padding(vec_cplx_t v) {
 //  out.elems = (cplx_t *)realloc(v.elems, size * sizeof(cplx_t));
 //  out.size = size;
 //  for(int i = v.size; i < size; i++) out.elems[i] = 0;
-  return v;
-}
+//  return v;
+//}
 
 double PI = atan2(1, 1) * 4;
 
-vec_cplx_t map_exp(pair_int_pair_int_vec_cplx_t in){
+int total_step;
+
+pair_vec_cplx_vec_cplx_t map_exp(pair_int_pair_vec_cplx_vec_cplx_t in){
   int lvl = in.fst;
-  int idx = in.snd.fst;
-  vec_cplx_t vec = in.snd.snd;
-  int k = idx * vec.size;
-  int e = lvl * vec.size;
-  for (int i = 0; i < vec.size; i++){
-    vec.elems[i] = cexp(-I * PI * (k + i) / e) * vec.elems[i];
+  pair_vec_cplx_vec_cplx_t vec = in.snd;
+  int e = vec.fst.size;
+  for (int i = 0; i < vec.fst.size - lvl; i+=total_step){
+    vec.fst.elems[i] = cexp(-I * PI * i / e) * vec.fst.elems[i];
   }
   return vec;
 }
 
-vec_cplx_t zip_add(pair_vec_cplx_vec_cplx_t in){
-  vec_cplx_t out;
-  out.elems = (cplx_t *)malloc(in.fst.size * sizeof(cplx_t));
-  out.size = in.fst.size;
-  for(int i = 0; i < in.fst.size && i < in.snd.size; i++){
-    out.elems[i] = in.fst.elems[i] + in.snd.elems[i];
+pair_vec_cplx_vec_cplx_t zip_add(pair_pair_vec_cplx_vec_cplx_pair_vec_cplx_vec_cplx_t in){
+  vec_cplx_t l = in.snd.fst;
+  vec_cplx_t r = in.fst.fst;
+  vec_cplx_t o = in.snd.snd;
+  for(int i = 0; i < in.fst.fst.size && i < in.snd.fst.size; i+=total_step){
+    o.elems[i] = l.elems[i] + r.elems[i];
   }
+  pair_vec_cplx_vec_cplx_t out = {o, l};
   return out;
 }
 
-vec_cplx_t zip_sub(pair_vec_cplx_vec_cplx_t in){
-  vec_cplx_t out;
-  out.elems = (cplx_t *)malloc(in.fst.size * sizeof(cplx_t));
-  out.size = in.fst.size;
-  for(int i = 0; i < in.fst.size && i < in.snd.size; i++){
-    out.elems[i] = in.fst.elems[i] - in.snd.elems[i];
+pair_vec_cplx_vec_cplx_t zip_sub(pair_pair_vec_cplx_vec_cplx_pair_vec_cplx_vec_cplx_t in){
+  vec_cplx_t l = in.fst.fst;
+  vec_cplx_t r = in.snd.fst;
+  vec_cplx_t o = in.snd.snd;
+  for(int i = 0; i < in.fst.fst.size && i < in.snd.fst.size; i+=total_step){
+    o.elems[i] = l.elems[i] - r.elems[i];
   }
+  pair_vec_cplx_vec_cplx_t out = {o, r};
   return out;
 }
 
-vec_cplx_t cat(pair_vec_cplx_vec_cplx_t in){
-  vec_cplx_t out;
-  out.size = in.fst.size + in.snd.size;
-  out.elems = (cplx_t *)malloc((in.fst.size + in.snd.size) * sizeof(cplx_t));
-  memcpy(out.elems, in.fst.elems, in.fst.size * sizeof(cplx_t));
-  memcpy(out.elems + in.fst.size, in.snd.elems, in.snd.size * sizeof(cplx_t));
-  free(in.fst.elems);
-  free(in.snd.elems);
+pair_vec_cplx_vec_cplx_t cat(pair_pair_vec_cplx_vec_cplx_pair_vec_cplx_vec_cplx_t in){
+  pair_vec_cplx_vec_cplx_t out = { in.fst.fst, in.fst.snd };
+  // out.fst.size += in.snd.fst.size;
+  // out.snd.size += in.snd.snd.size;
   return out;
 }
 
 void _fft(cplx_t buf[], cplx_t out[], int n, int step)
 {
-	if (step < n) {
-		_fft(out, buf, n, step * 2);
-		_fft(out + step, buf + step, n, step * 2);
+  if (step < n) {
+    _fft(out, buf, n, step * 2);
+    _fft(out + step, buf + step, n, step * 2);
 
-		for (int i = 0; i < n; i += 2 * step) {
-			cplx_t t = cexp(-I * PI * i / n) * out[i + step];
-			buf[i / 2]     = out[i] + t;
-			buf[(i + n)/2] = out[i] - t;
-		}
-	}
+    for (int i = 0; i < n; i += 2 * step) {
+      cplx_t t = cexp(-I * PI * i / n) * out[i + step];
+      buf[i / 2]     = out[i] + t;
+      buf[(i + n)/2] = out[i] - t;
+    }
+  }
 }
 
-vec_cplx_t baseFFT(pair_int_vec_cplx_t in)
+vec_cplx_t udrop(pair_int_vec_cplx_t i){
+  i.snd.elems += i.fst;
+  return i.snd;
+}
+
+void showstep(int stp, const char * s, vec_cplx_t in) {
+	printf("%s", s);
+	for (int i = 0; i < in.size; i+=stp)
+		if (!cimag(in.elems[i]))
+			printf("%g ", creal(in.elems[i]));
+		else
+			printf("(%g, %g) ", creal(in.elems[i]), cimag(in.elems[i]));
+    printf("\n");
+}
+
+pair_vec_cplx_vec_cplx_t baseFFT(pair_int_pair_vec_cplx_vec_cplx_t in)
 {
-    cplx_t *buf = in.snd.elems;
-    int n = in.snd.size;
+    cplx_t *buf = in.snd.fst.elems;
+    int n = in.snd.fst.size;
     int step = in.fst;
-	vec_cplx_t out;
-    out.elems = (cplx_t *)malloc(n * sizeof(cplx_t));
-    out.size = n;
-	for (int i = 0; i < n; i++) out.elems[i] = buf[i];
+    total_step = step;
 
-	_fft(out.elems, buf, n, step);
-    return out;
+	_fft(buf, in.snd.snd.elems, n, step);
+
+    return in.snd;
 }
-
 
 void show(const char * s, vec_cplx_t in) {
 	printf("%s", s);
@@ -153,17 +164,17 @@ void show(const char * s, vec_cplx_t in) {
 			printf("%g ", creal(in.elems[i]));
 		else
 			printf("(%g, %g) ", creal(in.elems[i]), cimag(in.elems[i]));
+    printf("\n");
 }
 
-
-vec_cplx_t seqfft(vec_cplx_t v){
-  vec_cplx_t v1 = add_padding(v);
-  pair_int_vec_cplx_t in = {1, v1};
+pair_vec_cplx_vec_cplx_t seqfft(pair_vec_cplx_vec_cplx_t v){
+  pair_int_pair_vec_cplx_vec_cplx_t in = {1, v};
   return baseFFT(in);
 }
 
-void free_mat(vec_cplx_t v){
-  free(v.elems);
+void free_mat(pair_vec_cplx_vec_cplx_t v){
+  free(v.fst.elems);
+  free(v.snd.elems);
 }
 
 static inline double get_time()
@@ -173,7 +184,7 @@ static inline double get_time()
     return t.tv_sec + t.tv_usec*1e-6;
 }
 
-vec_cplx_t randvec(size_t s){
+pair_vec_cplx_vec_cplx_t randvec(size_t s){
   vec_cplx_t in;
   in.elems = (cplx_t *)calloc(s, sizeof(cplx_t));
   in.size = s;
@@ -186,7 +197,12 @@ vec_cplx_t randvec(size_t s){
     in.elems[i] = rand_r + rand_i * I;
   }
 
-  return in;
+  vec_cplx_t copy;
+  copy.elems = (cplx_t *)calloc(s, sizeof(cplx_t));
+  copy.size = s;
+  memcpy(copy.elems, in.elems, s * sizeof(cplx_t));
+
+  return (pair_vec_cplx_vec_cplx_t){in, copy};
 }
 
 
@@ -219,18 +235,28 @@ int main(int argc, const char *argv[]) {
   }
 
 
-  vec_cplx_t in, out;
+  pair_vec_cplx_vec_cplx_t in, out;
   double start, end, time, time_diff, time_old, var;
 
-  WARMUP(seqfft)
+  // TEST
+  // cplx_t i[] = {1, 1, 1, 1, 0, 0, 0, 0};
+  // cplx_t o[] = {1, 1, 1, 1, 0, 0, 0, 0};
+  // pair_vec_cplx_vec_cplx_t iin = {{i, 8}, {o, 8}};
 
+  // out = fft3(iin);
+  // show("Out-fst:", out.fst); printf("\n");
+  // show("Out-snd:", out.snd); printf("\n");
+
+//   WARMUP(seqfft)
+//
   BENCHMARKSEQ("seq", seqfft)
+  BENCHMARKSEQ("0", fft0)
   BENCHMARKSEQ("1", fft1)
   BENCHMARKSEQ("2", fft2)
   BENCHMARKSEQ("3", fft3)
   BENCHMARKSEQ("4", fft4)
   BENCHMARKSEQ("5", fft5)
   BENCHMARKSEQ("6", fft6)
-  BENCHMARKSEQ("7", fft7)
-  BENCHMARKSEQ("8", fft8)
+//   // BENCHMARKSEQ("7", fft7)
+//   // BENCHMARKSEQ("8", fft8)
 }

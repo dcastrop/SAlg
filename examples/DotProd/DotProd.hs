@@ -66,3 +66,6 @@ dotProd24 = withSize 24 $ dotProdN
 
 dotProd32 :: CAlg f => f ([Double],[Double]) Double
 dotProd32 = withSize 32 $ dotProdN
+
+dotProd64 :: CAlg f => f ([Double],[Double]) Double
+dotProd64 = withSize 64 $ dotProdN

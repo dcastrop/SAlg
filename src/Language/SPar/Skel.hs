@@ -297,7 +297,11 @@ splitProc ir !(SProc el dol) !(SProc er dor) =
     !parts = participants out
     !plr = agreeDom ir el er
     !prl = agreeDom ir er el
-    !out = DPair dol dor
+    !out = dPair dol dor
+    dPair :: forall a b. (CVal a, CVal b) => DType a -> DType b -> DType (a, b)
+    dPair (DVal p1 t1) (DVal p2 t2)
+      | p1 Prelude.== p2 = DVal p1 (CPair t1 t2)
+    dPair l r = DPair l r
 
 splitSkel :: (CVal a, CVal b, CVal c) => a :=> b -> a :=> c -> a :=> (b, c)
 splitSkel (SSkel f) (SSkel g) = SSkel $! \i -> splitProc i <$!> f i <*> g i
