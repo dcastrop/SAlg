@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define REPETITIONS 1
+#define REPETITIONS 50
 
 #define BENCHMARKSEQ(s, f) { \
   time = 0; \
@@ -28,7 +28,6 @@
   printf("\t\tmean: %f\n", time); \
   printf("\t\tstddev: %f\n", REPETITIONS<=1? 0: sqrt(var / (REPETITIONS - 1))); \
 }
-// show("Seq: ", out);  \
 
 #define WARMUP(f) { \
   for(int i=0; i<REPETITIONS; i++){ \
@@ -220,10 +219,10 @@ vec_cplx_t randvec(int depth, size_t s){
   srand(time(NULL));
 
 
-  for (int i = 0; i < s/2; i++) {
+  for (int i = 0; i < s; i++) {
     double rand_r = (double)rand() / (double)RAND_MAX;
     double rand_i = (double)rand() / (double)RAND_MAX;
-    stages[0][0].elems[i] = 1; // rand_r + rand_i * I;
+    stages[0][0].elems[i] = rand_r + rand_i * I;
   }
 
   for(int j = 1; j < num_stages; j++) {
@@ -303,9 +302,8 @@ int main(int argc, const char *argv[]) {
   vec_cplx_t in, out;
   double start, end, time, time_diff, time_old, var;
 
-//   WARMUP(baseFFT)
-//
-  BENCHMARKSEQ(0, seqfft)
+  WARMUP(seqfft)
+  BENCHMARKSEQ(-1, seqfft)
   BENCHMARKSEQ(0, fft0)
   BENCHMARKSEQ(1, fft1)
   BENCHMARKSEQ(2, fft2)
@@ -313,6 +311,4 @@ int main(int argc, const char *argv[]) {
   BENCHMARKSEQ(4, fft4)
   BENCHMARKSEQ(5, fft5)
   BENCHMARKSEQ(6, fft6)
-//   // BENCHMARKSEQ("7", fft7)
-//   // BENCHMARKSEQ("8", fft8)
 }
