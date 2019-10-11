@@ -695,7 +695,7 @@ intConst :: Integer -> CExpr
 intConst i = CConst $ CIntConst (cInteger i) undefNode
 
 qSize :: CExpr
-qSize = CConst $ CIntConst (cInteger 16) undefNode
+qSize = CConst $ CIntConst (cInteger 1) undefNode
 
 initChan :: CInit
 initChan = CInitList

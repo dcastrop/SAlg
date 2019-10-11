@@ -258,9 +258,14 @@ lift f = SSkel $ \i -> do
   pproc (DVal p getCTy) $ kleisliEnv (msg i p) (singleton i p $ \v -> run f v)
 
 constSkel :: (CVal a, CVal b) => a -> b :=> a
-constSkel v = SSkel $ \i -> do
-  let p = anyPID i
-  pproc (DVal p getCTy) $ singleton i p $ \_ -> pure (Lit v)
+constSkel v = sfun $ \_ -> Lit v
+--
+--   SSkel $ \i -> do
+--   let p = anyPID i
+--   case projTy i p of
+--     ATy ty ->
+--       pproc (DVal p getCTy) $
+--       singleton ty p $ \_ -> pure (Lit v)
 
 fstSkel :: (CVal a, CVal b) => (a, b) :=> a
 fstSkel = SSkel $ \i -> do
