@@ -138,9 +138,12 @@ fft5 = withSize 5 fft
 
 fft6 :: (D [Complex Double]) :=> (D [Complex Double])
 fft6 = withSize 6 fft
---
--- fft7 :: CAlg f => f (D [Complex Double]) (D [Complex Double])
--- fft7 = withSize 7 fft
+
+fft7 :: D [Complex Double] :=> D [Complex Double]
+fft7 = withSize 7 fft
+
+fft8 :: D [Complex Double] :=> D [Complex Double]
+fft8 = withSize 8 fft
 --
 -- fft8 :: CAlg f => f (D [Complex Double]) (D [Complex Double])
 -- fft8 = withSize 8 fft
