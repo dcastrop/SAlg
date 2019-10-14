@@ -311,4 +311,6 @@ int main(int argc, const char *argv[]) {
   BENCHMARKSEQ(4, fft4)
   BENCHMARKSEQ(5, fft5)
   BENCHMARKSEQ(6, fft6)
+  BENCHMARKSEQ(7, fft7)
+  BENCHMARKSEQ(8, fft8)
 }
