@@ -31,7 +31,7 @@ import qualified Language.SPar.Skel as S
 --parTest :: [Double] :=> [Double]
 --parTest = annotate (ann (S.vsize :: [Double] :-> Double)) $ test2
 
-msort :: (CAlg f, CArrFix f) => Int -> f [Double] [Double]
+msort :: (CVal a, CAlg f) => Int -> f [a] [a]
 msort n = fix n $ \ms x ->
   vlet (vsize x) $ \sz ->
   if sz <= 1
@@ -39,7 +39,10 @@ msort n = fix n $ \ms x ->
   else vlet (sz / 2) $ \sz2 ->
     vlet (par ms $ vtake sz2 x) $ \xl ->
     vlet (par ms $ vdrop sz2 x) $ \xr ->
-    (par $ prim "merge") $ pair (sz, pair (xl, xr))
+    app merge $ pair (sz, pair (xl, xr))
+
+merge :: (CVal a, CAlg f, CArrFix f) => f (Int, ([a], [a])) [a]
+merge = cfun $  prim "merge"
 --
 -- msort :: (CAlg f, CArrFix f) => Int -> f [Double] [Double]
 -- msort n = pfix n $ \ms x ->

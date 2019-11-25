@@ -18,7 +18,7 @@ qsort n = fix n $ \qs x ->
   then x
   else vlet (filter x) $ \lr ->
     vlet (par qs $ fst lr) $ \xl ->
-    vlet (qs $ snd lr) $ \xr ->
+    vlet (par qs $ snd lr) $ \xr ->
     prim "cat" @@ 0 $ pair (xl, xr)
 
 parMsort0 :: [Int] :=> [Int]
@@ -50,3 +50,6 @@ parMsort8 = qsort 8
 
 parMsort9 :: [Int] :=> [Int]
 parMsort9 = qsort 9
+
+parMsort10 :: [Int] :=> [Int]
+parMsort10 = qsort 10

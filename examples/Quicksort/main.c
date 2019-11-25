@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define REPETITIONS 50
+#define REPETITIONS 1
 
 #define BENCHMARK(s, f) { \
   time = 0; \
@@ -171,6 +171,7 @@ int main(int argc, const char *argv[]) {
   BENCHMARK(7, parMsort7);
   BENCHMARK(8, parMsort8);
   BENCHMARK(9, parMsort9);
+  BENCHMARK(10, parMsort10);
 
 
   // double start[9], end[9];
