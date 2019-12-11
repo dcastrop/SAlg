@@ -12,7 +12,6 @@ module ScalarMulMat where
 
 --import qualified Prelude as P
 import Control.CArr.CSyn
-import Language.SPar.Skel ( (:=>) )
 --import Control.Monad.CGen
 --import System.Environment
 
@@ -35,31 +34,23 @@ parProd :: forall n. (IsSing n)
 parProd n = withCDict (cdictProd @[[Double]] n) $
   cfun $ \x -> catv n `app` (scalarProd n `app` (ssplitv @[Double] n `app` x))
 
-parProd0 :: [[Double]] :=> [[Double]]
+parProd0    ,
+  parProd1  ,
+  parProd2  ,
+  parProd3  ,
+  parProd4  ,
+  parProd8  ,
+  parProd16 ,
+  parProd32 ,
+  parProd64 :: CAlg f => f [[Double]] [[Double]]
 parProd0 = withSize 0 parProd
-
-parProd1 :: [[Double]] :=> [[Double]]
 parProd1 = withSize 1 parProd
-
-parProd2 :: [[Double]] :=> [[Double]]
 parProd2 = withSize 2 parProd
-
-parProd3 :: [[Double]] :=> [[Double]]
 parProd3 = withSize 3 parProd
-
-parProd4 :: [[Double]] :=> [[Double]]
 parProd4 = withSize 4 parProd
-
-parProd8 :: [[Double]] :=> [[Double]]
 parProd8 = withSize 8 parProd
-
-parProd16 :: [[Double]] :=> [[Double]]
 parProd16 = withSize 16 parProd
-
-parProd32 :: [[Double]] :=> [[Double]]
 parProd32 = withSize 32 parProd
-
-parProd64 :: [[Double]] :=> [[Double]]
 parProd64 = withSize 64 parProd
 
 

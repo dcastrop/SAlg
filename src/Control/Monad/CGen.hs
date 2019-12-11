@@ -95,6 +95,7 @@ data ECTy
   | ECVec ECTy
   deriving (Eq, Ord, Show)
 
+
 cTyName :: String -> ECTy -> String -> Ident
 cTyName pref t suff = internalIdent $ pref ++ tyNm t ++ suff
   where

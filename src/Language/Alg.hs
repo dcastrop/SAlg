@@ -867,3 +867,6 @@ errorAndExit =
                               undefNode]
                              undefNode)) undefNode
   ]
+
+instance CArrLift (:->) (:->) where
+  lift f = f

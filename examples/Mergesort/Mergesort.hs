@@ -43,16 +43,6 @@ msort n = fix n $ \ms x ->
 
 merge :: (CVal a, CAlg f, CArrFix f) => f (Int, ([a], [a])) [a]
 merge = cfun $  prim "merge"
---
--- msort :: (CAlg f, CArrFix f) => Int -> f [Double] [Double]
--- msort n = pfix n $ \ms x ->
---   vlet (vsize x) $ \sz ->
---   if sz <= 1
---   then x
---   else vlet (sz / 2) $ \sz2 ->
---     vlet (ms $ vtake sz2 x) $ \xl ->
---     vlet (ms $ vdrop sz2 x) $ \xr ->
---     prim "merge" $ pair (sz, pair (xl, xr))
 
 msort_2 :: (CAlg f, CArrFix f) => f [Double] [Double]
 msort_2 = fix 2 $ \ms x ->
@@ -64,47 +54,32 @@ msort_2 = fix 2 $ \ms x ->
     vlet (ms $ vdrop sz2 x) $ \xr ->
     (prim "merge") $ pair (sz, pair (xl, xr))
 
-parMsort0 :: [Double] :=> [Double]
+parMsort0 :: CAlg f => f [Double] [Double]
 parMsort0 = msort 0
 
-parMsort1 :: [Double] :=> [Double]
+parMsort1 :: CAlg f => f [Double] [Double]
 parMsort1 = msort 1
 
-parMsort1a :: [Double] :=> [Double]
+parMsort1a :: CAlg f => f [Double] [Double]
 parMsort1a = msort_2
 
-parMsort2 :: [Double] :=> [Double]
+parMsort2 :: CAlg f => f [Double] [Double]
 parMsort2 = msort 2
 
-parMsort3 :: [Double] :=> [Double]
+parMsort3 :: CAlg f => f [Double] [Double]
 parMsort3 = msort 3
 
-parMsort4 :: [Double] :=> [Double]
+parMsort4 :: CAlg f => f [Double] [Double]
 parMsort4 = msort 4
 
-parMsort5 :: [Double] :=> [Double]
+parMsort5 :: CAlg f => f [Double] [Double]
 parMsort5 = msort 5
 
-parMsort6 :: [Double] :=> [Double]
+parMsort6 :: CAlg f => f [Double] [Double]
 parMsort6 = msort 6
 
-parMsort7 :: [Double] :=> [Double]
+parMsort7 :: CAlg f => f [Double] [Double]
 parMsort7 = msort 7
 
-parMsort8 :: [Double] :=> [Double]
+parMsort8 :: CAlg f => f [Double] [Double]
 parMsort8 = msort 8
-
---strat :: AnnStrat
---strat = ann msort
---
---type T a = Either a (a, a)
---
---split :: (CAlg f, CArrFix f) => f [Double] (T [Double])
---split = cfun $ \x ->
---  vlet (vsize x) $ \sz ->
---  if sz <= 1
---  then inl x
---  else vlet (sz / 2) $ \sz2 ->
---    vlet (vtake sz2 x) $ \xl ->
---    vlet (vdrop sz2 x) $ \xr ->
---    inr $ (pair (xl, xr))

@@ -6,7 +6,6 @@
 module Quicksort where
 
 import Control.CArr.CSyn
-import Language.SPar.Skel ( (:=>) )
 
 filter :: forall f ctx. (CAlg f, CVal ctx)
        => Expr f ctx [Int] -> Expr f ctx ([Int], [Int])
@@ -21,35 +20,17 @@ qsort n = fix n $ \qs x ->
     vlet (par qs $ snd lr) $ \xr ->
     prim "cat" @@ 0 $ pair (xl, xr)
 
-parMsort0 :: [Int] :=> [Int]
+parMsort0, parMsort1, parMsort2, parMsort3, parMsort4, parMsort5, parMsort6,
+  parMsort7, parMsort8, parMsort9, parMsort10  :: CAlg f => f [Int] [Int]
+
 parMsort0 = qsort 0
-
-parMsort1 :: [Int] :=> [Int]
 parMsort1 = qsort 1
-
-parMsort2 :: [Int] :=> [Int]
 parMsort2 = qsort 2
-
-parMsort3 :: [Int] :=> [Int]
 parMsort3 = qsort 3
-
-parMsort4 :: [Int] :=> [Int]
 parMsort4 = qsort 4
-
-parMsort5 :: [Int] :=> [Int]
 parMsort5 = qsort 5
-
-parMsort6 :: [Int] :=> [Int]
 parMsort6 = qsort 6
-
-parMsort7 :: [Int] :=> [Int]
 parMsort7 = qsort 7
-
-parMsort8 :: [Int] :=> [Int]
 parMsort8 = qsort 8
-
-parMsort9 :: [Int] :=> [Int]
 parMsort9 = qsort 9
-
-parMsort10 :: [Int] :=> [Int]
 parMsort10 = qsort 10

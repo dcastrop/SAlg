@@ -20,12 +20,11 @@ import Control.CCat
 import Control.CArr
 import Control.CArr.CSyn ( SINat, Sing(..), Tree
                          , cdictTree, withCDict, toInteger, withSize )
-import Language.SPar.Skel ( (:=>), (:->), lift )
+import Language.SPar.Skel ( (:->), liftAlg )
 
-
-tsplit' :: forall a n. CVal a => SINat n -> Int
+tsplit' :: forall a n f. (CVal a, CArrLift (:->) f, CAlg f) => SINat n -> Int
         -> (Int -> Int -> a :-> (a, a))
-        -> a :=> (Tree n a)
+        -> f a (Tree n a)
 tsplit' SZ _acc _f = newProc
 tsplit' (SS n) acc f =
   withCDict (cdictTree @a n) $ lift (f wl wr) >>>
@@ -34,10 +33,10 @@ tsplit' (SS n) acc f =
     wl = acc
     wr = acc + 2 ^ toInteger n
 
-tsplit :: forall a n. CVal a
+tsplit :: forall a n f. (CArrLift (:->) f, CAlg f, CVal a)
        => SINat n
        -> (Int -> Int -> a :-> (a, a))
-       -> a :=> (Tree n a)
+       -> f a (Tree n a)
 tsplit n = tsplit' n 0
 
 tfold  :: forall f a n. (CAlg f, CVal a)
@@ -46,13 +45,13 @@ tfold  SZ _f = id
 tfold (SS n) f =
   withCDict (cdictTree @a n) $ (tfold n f *** tfold n f) >>> f
 
-zipTree :: forall a b n. (CVal a, CVal b)
+zipTree :: forall a b n f. (CVal a, CVal b, CAlg f, CArrLift (:->) f)
         => SINat n
         -> Prelude.Bool
         -> Int
         -> Int
         -> ((Int, Int), (a, a)) :-> b
-        -> (Tree n a, Tree n a) :=> (Tree n b)
+        -> f (Tree n a, Tree n a) (Tree n b)
 zipTree SZ b l w f
   | b = lift ((lit l &&& lit w) &&& id >>> f)
   | otherwise = (snd &&& fst) >>> lift ((lit l &&& lit w) &&& id >>> f)
@@ -93,10 +92,12 @@ deinterleave wl wr = lit wl &&& lit wr >>> prim "deinterleave"
 intlit :: (CAlg f, CVal a) => SINat n -> f a Int
 intlit i = fromInteger $ toInteger i + 1
 
-fftTree :: forall n. SINat n -> Int
-        -> (Tree n (D [Complex Double])) :=> (Tree n (D [Complex Double]))
+fftTree :: (CArrLift (:->) f, CAlg f)
+        => SINat n
+        -> Int
+        -> f (Tree n (D [Complex Double])) (Tree n (D [Complex Double]))
 fftTree SZ w
-  = lift (intlit SZ &&& (lit w &&& id) >>> prim "baseFFT")
+  = liftAlg (intlit SZ &&& (lit w &&& id) >>> prim "baseFFT")
 fftTree (SS x) w
   = withCDict (cdictTree @(D [Complex Double]) x) $
     (fftTree x w {-EVENS-} *** fftTree x (w + 2^ toInteger x){-ODDS-}) >>>
@@ -112,37 +113,47 @@ fftTree (SS x) w
     subc :: ((Int, Int), (D [Complex Double], D [Complex Double])) :-> (D [Complex Double])
     subc = id *** (snd &&& fst) >>> prim "zip_sub"
 
-fft :: SINat n -> (D [Complex Double]) :=> (D [Complex Double])
+fft :: (CArrLift (:->) f, CAlg f)
+    => SINat n -> f (D [Complex Double]) (D [Complex Double])
 fft n =
   withCDict (cdictTree @(D [Complex Double]) n) $
   -- addPadding >>>
   tsplit n deinterleave >>> fftTree n 0 >>> tfold n (runAt 0 >>> prim "cat")
 
-fft0 :: (D [Complex Double]) :=> (D [Complex Double])
+fft0 :: (CArrLift (:->) f, CAlg f)
+     => f (D [Complex Double]) (D [Complex Double])
 fft0 = withSize 0 fft
 
-fft1 :: (D [Complex Double]) :=> (D [Complex Double])
+fft1 :: (CArrLift (:->) f, CAlg f)
+     => f (D [Complex Double]) (D [Complex Double])
 fft1 = withSize 1 fft
 
-fft2 :: (D [Complex Double]) :=> (D [Complex Double])
+fft2 :: (CArrLift (:->) f, CAlg f)
+     => f (D [Complex Double]) (D [Complex Double])
 fft2 = withSize 2 fft
 
-fft3 :: (D [Complex Double]) :=> (D [Complex Double])
+fft3 :: (CArrLift (:->) f, CAlg f)
+     => f (D [Complex Double]) (D [Complex Double])
 fft3 = withSize 3 fft
 
-fft4 :: (D [Complex Double]) :=> (D [Complex Double])
+fft4 :: (CArrLift (:->) f, CAlg f)
+     => f (D [Complex Double]) (D [Complex Double])
 fft4 = withSize 4 fft
 
-fft5 :: (D [Complex Double]) :=> (D [Complex Double])
+fft5 :: (CArrLift (:->) f, CAlg f)
+     => f (D [Complex Double]) (D [Complex Double])
 fft5 = withSize 5 fft
 
-fft6 :: (D [Complex Double]) :=> (D [Complex Double])
+fft6 :: (CArrLift (:->) f, CAlg f)
+     => f (D [Complex Double]) (D [Complex Double])
 fft6 = withSize 6 fft
 
-fft7 :: D [Complex Double] :=> D [Complex Double]
+fft7 :: (CArrLift (:->) f, CAlg f)
+     => f (D [Complex Double]) (D [Complex Double])
 fft7 = withSize 7 fft
 
-fft8 :: D [Complex Double] :=> D [Complex Double]
+fft8 :: (CArrLift (:->) f, CAlg f)
+     => f (D [Complex Double]) (D [Complex Double])
 fft8 = withSize 8 fft
 --
 -- fft8 :: CAlg f => f (D [Complex Double]) (D [Complex Double])

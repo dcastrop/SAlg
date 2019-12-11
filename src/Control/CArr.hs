@@ -19,6 +19,7 @@ module Control.CArr
   , CArrFix (..)
   , CArrFrac
   , CArrPar (..)
+  , CArrLift (..)
   , CAlg
   ) where
 
@@ -70,6 +71,8 @@ class CCat t => CArr t where
   (&&&) :: (CVal a, CVal b, CVal c) => t a b -> t a c -> t a (b, c)
   f &&& g = arr "dup" (\b -> (b,b)) >>> f *** g
 
+class (CArr f, CArr g) => CArrLift f g where
+  lift :: (CVal a, CVal b) => f a b -> g a b
 
 class CArr a => CArrChoice a where
 
