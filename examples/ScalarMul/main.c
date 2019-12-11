@@ -6,7 +6,9 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define REPETITIONS 1
+#ifndef REPETITIONS
+#define REPETITIONS 50
+#endif
 
 #define BENCHMARKSEQ(s, f) { \
   time = 0; \

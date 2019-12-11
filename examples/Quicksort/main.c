@@ -6,7 +6,9 @@
 #include <stdlib.h>
 #include <math.h>
 
+#ifndef REPETITIONS
 #define REPETITIONS 1
+#endif
 
 #define BENCHMARK(s, f) { \
   time = 0; \
