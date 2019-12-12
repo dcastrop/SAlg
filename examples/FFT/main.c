@@ -26,7 +26,11 @@
     time += (time_diff - time)/(i+1); \
     var += (time_diff - time) * (time_diff - time_old); \
   } \
-  printf("\tK: %d\n", s); \
+  if (s < 0) { \
+    printf("\tK: seq\n"); \
+  } else { \
+    printf("\tK: %d\n", s); \
+  } \
   printf("\t\tmean: %f\n", time); \
   printf("\t\tstddev: %f\n", REPETITIONS<=1? 0: sqrt(var / (REPETITIONS - 1))); \
 }

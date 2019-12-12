@@ -28,7 +28,7 @@
   } \
   printf("\tK: %s\n", s); \
   printf("\t\tmean: %f\n", time); \
-  printf("\t\tstddev: %f\n", sqrt(var / (REPETITIONS - 1))); \
+  printf("\t\tstddev: %f\n", REPETITIONS<=1? 0: sqrt(var / (REPETITIONS - 1))); \
 }
 
 static inline double get_time()
@@ -123,16 +123,16 @@ int main(int argc, const char *argv[]) {
   double time_diff = 0;
   double time_old = 0;
   double var = 0;
-  BENCHMARK("ms0", parMsort0)
-  BENCHMARK("ms1", parMsort1)
+  BENCHMARK("seq", parMsort0)
+  BENCHMARK("1", parMsort1)
   //BENCHMARK("ms1a", parMsort1a)
-  BENCHMARK("ms2", parMsort2)
-  BENCHMARK("ms3", parMsort3)
-  BENCHMARK("ms4", parMsort4)
-  BENCHMARK("ms5", parMsort5)
-  BENCHMARK("ms6", parMsort6)
-  BENCHMARK("ms7", parMsort7)
-  BENCHMARK("ms8", parMsort8)
+  BENCHMARK("2", parMsort2)
+  BENCHMARK("3", parMsort3)
+  BENCHMARK("4", parMsort4)
+  BENCHMARK("5", parMsort5)
+  BENCHMARK("6", parMsort6)
+  BENCHMARK("7", parMsort7)
+  BENCHMARK("8", parMsort8)
 
   // time = 0;
   // for(int i=0; i<REPETITIONS; i++){
