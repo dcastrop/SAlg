@@ -6,7 +6,7 @@ NCORES=$((${NCORES}>=${MAXCORES} ? ${MAXCORES} : ${NCORES}))
 NAME=t_${NCORES}
 
 SIZES=
-for i in `seq 9 30`
+for i in `seq 26 30`
 do
   SIZES="${SIZES} $((2 ** i))"
 done
