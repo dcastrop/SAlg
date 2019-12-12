@@ -1,10 +1,11 @@
-#!/bin/zsh
+#!/bin/bash
 
 DIR=$1
+CORES=$2
 
 plotfn() {
   SZ=$1
-  NAME=$DIR:l
+  NAME=${DIR,,}
 
   PATH=${DIR}/data/t_48_${1}
   OUT="${NAME}_$SZ"
@@ -13,7 +14,5 @@ plotfn() {
   ./plot.py ${1} plots/${OUT} ${PATH}
 }
 
-plotfn 12
-plotfn 24
-plotfn 48
+plotfn ${CORES}
 
