@@ -44,7 +44,8 @@ compile fp _args = do
                   _ -> pure ("", False)
              ) fns
 
-      liftIO $ mapM_ (\a -> putStrLn $ "Compiling '" ++ a ++ "'") ftys
+      liftIO $ putStrLn $ "Found functions: "
+      liftIO $ mapM_ putStrLn ftys
       compileAll $ ftys
 
     compileAll :: [String] -> InterpreterT IO ()
@@ -91,7 +92,6 @@ mpst fp args = do
                   _ -> pure ("", False)
              ) fns
 
-      liftIO $ mapM_ (\a -> putStrLn $ "Compiling '" ++ a ++ "'") ftys
       gtAll $ ftys
 
     gtAll :: [String] -> InterpreterT IO ()

@@ -29,8 +29,8 @@ catv :: forall n f a. (IsSing n, CAlg f, CVal a)
 catv n =
   withCDict (cdictProd @[a] n) $ cfun $ sfold n (prim "cat" @@ 0)
 
-parProd :: forall n. (IsSing n)
-        => SINat n -> [[Double]] :=> [[Double]]
+parProd :: forall n f. (IsSing n, CAlg f)
+        => SINat n -> f [[Double]] [[Double]]
 parProd n = withCDict (cdictProd @[[Double]] n) $
   cfun $ \x -> catv n `app` (scalarProd n `app` (ssplitv @[Double] n `app` x))
 

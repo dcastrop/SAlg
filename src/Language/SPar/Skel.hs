@@ -626,7 +626,8 @@ choiceGt :: CVal c
          -> OGT c
          -> OGT c
          -> OGT c
-choiceGt p (OGT l lo) (OGT r ro) = OGT (cChoice p (Set.toList ps) l r) o
+choiceGt p (OGT l lo) (OGT r ro) =
+  OGT (cChoice p (Set.toList (MPST.Rol p `Set.delete` ps)) l r) o
   where
     o = DAlt p lo ro
     ps = MPST.roles (l GEnd) `Set.union` MPST.roles (r GEnd)

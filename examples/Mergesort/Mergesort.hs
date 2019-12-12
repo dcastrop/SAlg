@@ -5,31 +5,6 @@
 module Mergesort where
 
 import Control.CArr.CSyn
-import Language.SPar.Skel ( (:=>), AnnStrat, annotate, ann )
-import qualified Language.SPar.Skel as S
-
-
---merge1 :: CAlg f => f ([Double], [Double]) [Double]
---merge1 = prim "merge"
---
---merge2 :: CAlg f => f ([Double], [Double]) [Double]
---merge2 = cfun $ \x -> merge1 . x
---
---test1 :: CAlg f => f [Double] [Double]
---test1 = cfun $ \x ->
---  if vsize x <= 1
---  then x
---  else x
---
---test2 :: CAlg f => f [Double] [Double]
---test2 = cfun $ \x ->
---  vlet (vsize x) $ \sz ->
---  if sz <= 1
---  then x
---  else x
---
---parTest :: [Double] :=> [Double]
---parTest = annotate (ann (S.vsize :: [Double] :-> Double)) $ test2
 
 msort :: (CVal a, CAlg f) => Int -> f [a] [a]
 msort n = fix n $ \ms x ->
@@ -39,20 +14,11 @@ msort n = fix n $ \ms x ->
   else vlet (sz / 2) $ \sz2 ->
     vlet (par ms $ vtake sz2 x) $ \xl ->
     vlet (par ms $ vdrop sz2 x) $ \xr ->
-    app merge $ pair (sz, pair (xl, xr))
+    app (merge ()) $ pair (sz, pair (xl, xr))
 
-merge :: (CVal a, CAlg f, CArrFix f) => f (Int, ([a], [a])) [a]
-merge = cfun $  prim "merge"
-
-msort_2 :: (CAlg f, CArrFix f) => f [Double] [Double]
-msort_2 = fix 2 $ \ms x ->
-  vlet (vsize x) $ \sz ->
-  if sz <= 1
-  then x
-  else vlet (sz / 2) $ \sz2 ->
-    vlet (par ms $ vtake sz2 x) $ \xl ->
-    vlet (ms $ vdrop sz2 x) $ \xr ->
-    (prim "merge") $ pair (sz, pair (xl, xr))
+-- prevent it from being compiled
+merge :: (CVal a, CAlg f, CArrFix f) => () -> f (Int, ([a], [a])) [a]
+merge _ = cfun $  prim "merge"
 
 parMsort0 :: CAlg f => f [Double] [Double]
 parMsort0 = msort 0
@@ -60,8 +26,8 @@ parMsort0 = msort 0
 parMsort1 :: CAlg f => f [Double] [Double]
 parMsort1 = msort 1
 
-parMsort1a :: CAlg f => f [Double] [Double]
-parMsort1a = msort_2
+-- parMsort1a :: CAlg f => f [Double] [Double]
+-- parMsort1a = msort_2
 
 parMsort2 :: CAlg f => f [Double] [Double]
 parMsort2 = msort 2
