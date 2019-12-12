@@ -14,5 +14,7 @@ plotfn() {
   ./plot.py ${1} plots/${OUT} ${PATH}
 }
 
+[ ! -d ./plots ] && mkdir plots
+
 plotfn ${CORES}
 
