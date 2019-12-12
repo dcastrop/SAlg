@@ -10,14 +10,14 @@ sbuild () {
 }
 
 MAXCORES=$(grep ^cpu\\scores /proc/cpuinfo | uniq |  awk '{print $4}')
-NCORES=${1:-"${MAXCORES}"}
+NCORES=${CORES:-"${MAXCORES}"}
 NCORES=$((${NCORES}>=${MAXCORES} ? ${MAXCORES} : ${NCORES}))
 
-REPETITIONS=${2:-"50"}
+REPETITIONS=${REPETITIONS:-"50"}
+MAXSIZE=${MAXSIZE:-"30"}
+MAXSIZE=$((${MAXSIZE}<9 ? 9 : ${MAXSIZE}))
 
-echo "# Running ./${me} CORES REPETITIONS"
-echo "#    with CORES       = ${NCORES}"
-echo "#     and REPETITIONS = ${REPETITIONS}"
+echo "# Running CORES=${NCORES} REPETITIONS=${REPETITIONS} MAXSIZE=${MAXSIZE} ./${me}"
 
 DIRS="DotProd FFT Mergesort Quicksort ScalarMulMat"
 
@@ -30,7 +30,7 @@ do
   echo "+ stack exec -- session-arrc --infer ${GT} ${dir}.hs"
   stack exec -- session-arrc --infer ${GT} ${dir}.hs
   cat ${dir}_${GT}.mpst
-  ./run.sh ${NCORES}
+  ./run.sh ${NCORES} ${MAXSIZE}
   popd > /dev/null
 done
 
