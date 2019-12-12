@@ -30,5 +30,5 @@ for SIZE in ${SIZES}
 do
   echo "size: ${SIZE}" >> ${DATA}
   echo "# running ${EXE} ${SIZE} on CPUS 0-${CID}"
-  numactl -C 0-${CID} --membind=0 ${EXE} ${SIZE} >> ${DATA}
+  numactl -C 0-${CID} ${EXE} ${SIZE} >> ${DATA}
 done
